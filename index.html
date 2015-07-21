@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="UTF-8">
+    <title>Envoy-deployscript by nickfan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="stylesheets/normalize.css" media="screen">
+    <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+  </head>
+  <body>
+    <section class="page-header">
+      <h1 class="project-name">Envoy-deployscript</h1>
+      <h2 class="project-tagline">Laravel Envoy Deployment Script</h2>
+      <a href="https://github.com/nickfan/envoy-deployscript" class="btn">View on GitHub</a>
+      <a href="https://github.com/nickfan/envoy-deployscript/zipball/master" class="btn">Download .zip</a>
+      <a href="https://github.com/nickfan/envoy-deployscript/tarball/master" class="btn">Download .tar.gz</a>
+    </section>
+
+    <section class="main-content">
+      <h1>
+<a id="envoy-deployscript" class="anchor" href="#envoy-deployscript" aria-hidden="true"><span class="octicon octicon-link"></span></a>envoy-deployscript</h1>
+
+<p>Laravel Envoy Deployment Script</p>
+
+<p>Base on <a href="https://github.com/papertank/envoy-deploy">papertank/envoy-deploy</a>
+Inspired by</p>
+
+<ul>
+<li><a href="https://github.com/papertank/envoy-deploy">papertank/envoy-deploy</a></li>
+<li><a href="https://serversforhackers.com/video/deploying-with-envoy-cast">Deploying with Envoy (Cast)</a></li>
+<li><a href="https://serversforhackers.com/video/enhancing-envoy-deployment">Enhancing Envoy Deployment</a></li>
+<li><a href="https://iatstuti.net/blog/an-envoyer-like-deployment-script-using-envoy">An Envoyer-like deployment script using Envoy</a></li>
+<li><a href="http://rocketeer.autopergamene.eu/">Rocketeer</a></li>
+</ul>
+
+<p>This repository includes an Envoy.blade.php script that is designed to provide a very basic "zero-downtime" deployment option using the open-source <a href="http://laravel.com/docs/5.1/envoy">Laravel Envoy</a> tool.</p>
+
+<h2>
+<a id="requirements" class="anchor" href="#requirements" aria-hidden="true"><span class="octicon octicon-link"></span></a>Requirements</h2>
+
+<p>This Envoy script is designed to be used with Laravel 5 projects,however you could modify for other type of projects.</p>
+
+<p>Notice that your local server/machine should configured to use <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-ssh-key-based-authentication-on-a-linux-server">SSH Key-Based Authentication</a>.</p>
+
+<h2>
+<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installation</h2>
+
+<p>Your must have Envoy installed using the Composer global command:</p>
+
+<blockquote>
+<p>composer global require "laravel/envoy=~1.0"</p>
+</blockquote>
+
+<h2>
+<a id="usage" class="anchor" href="#usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage</h2>
+
+<h3>
+<a id="setup" class="anchor" href="#setup" aria-hidden="true"><span class="octicon octicon-link"></span></a>Setup</h3>
+
+<ol>
+<li><p>Download or clone this repository</p></li>
+<li><p>then copy envoy.config.php and Envoy.blade.php to your laravel project root directory.(e.g ~/code/mysite)</p></li>
+<li><p>then edit the envoy.config.php file with the ssh login, Git repository, server path for your app.
+The <code>$deploybasepath</code> (server base path) should already be created in your server with right permissions(e.g owner:www-data,read/write).
+You should set your website root directory (in vhost / server config) to <code>$deploybasepath/$appname</code>/current/public (e.g /var/www/mysite/current/public)</p></li>
+<li><p>add <code>.envoydeploy/</code> directory to your .gitignore file in your laravel project root if you use git as your source control software.</p></li>
+<li><p>you should create a .env.production file (dot env settings file ) in your laravel project root directory that will deploy to remote server
+otherwise if you specify the Laravel environment (e.g development/testing) create or symbolic the corresponding env file (e.g .env.development/.env.testing)
+and you could add the dot env settings file to your .gitignore file.</p></li>
+<li><p>you should create an directory <code>extra/custom/</code> in your laravel project root, the deploy script will copy every directories and files in it to overwrite the files in target server.</p></li>
+</ol>
+
+<blockquote>
+<p>for example:</p>
+
+<p>you create file:</p>
+
+<p><code>extra/custom/node_modules/laravel-elixir/Config.js</code></p>
+
+<p>after deploy it will copy and overwrite to</p>
+
+<p><code>($deployed_project_root)/node_modules/laravel-elixir/Config.js</code>
+it's usually we use this for custom laravel-elixir config setting and etc.</p>
+</blockquote>
+
+<h3>
+<a id="init" class="anchor" href="#init" aria-hidden="true"><span class="octicon octicon-link"></span></a>Init</h3>
+
+<p>When you're happy with the config, run the init task on your local machine by running the following in the repository directory</p>
+
+<blockquote>
+<p>envoy run deploy_init</p>
+</blockquote>
+
+<p>You can specify the Laravel environment (for artisan:migrate command) and git branch as options</p>
+
+<blockquote>
+<p>envoy run deploy_init --branch=develop --env=development</p>
+</blockquote>
+
+<p>You only need to run the init task once.</p>
+
+<p>The init task creates a <code>.env</code> file in your app root path (e.g /var/www/mysite/.env )- make sure and update the environment variables appropriately.</p>
+
+<h3>
+<a id="deploy" class="anchor" href="#deploy" aria-hidden="true"><span class="octicon octicon-link"></span></a>Deploy</h3>
+
+<p>Each time you want to deploy simply run the deploy task on your local machine in the repository direcory</p>
+
+<blockquote>
+<p>envoy run deploy</p>
+</blockquote>
+
+<p>You can specify the Laravel environment (for artisan:migrate command) and git branch as options</p>
+
+<blockquote>
+<p>envoy run deploy --branch=develop --env=development</p>
+</blockquote>
+
+<h4>
+<a id="working-copy-deploy" class="anchor" href="#working-copy-deploy" aria-hidden="true"><span class="octicon octicon-link"></span></a>Working copy deploy</h4>
+
+<p>if your remote server just have too small RAM to run <code>composer install</code> on your server (e.g some cheap VPS server instance)
+you could use <code>deploy_mix_pack</code> instead of <code>deploy</code> command.</p>
+
+<blockquote>
+<p>envoy run deploy_mix_pack</p>
+</blockquote>
+
+<p>The <strong>deploy_mix_pack</strong> task assume your local working copy have the same branch same env for remote deploy repo
+and you have <code>composer install</code> and optional <code>npm install</code> or <code>bower install</code> task done on your local working copy.
+( you could disable that <code>npm install</code> or <code>bower install</code> by comment out that line in Envoy.blade.php if you don't need/have npm/bower installed)
+then it will pack <code>vendor</code> and <code>node_modules</code> into deps.tgz and scp to the remote server to deploy to the target directory
+and git clone repo at remote server and deploy links and etc.</p>
+
+<h4>
+<a id="release-and-dependencies-build-and-deploy-from-local" class="anchor" href="#release-and-dependencies-build-and-deploy-from-local" aria-hidden="true"><span class="octicon octicon-link"></span></a>Release and dependencies build and deploy from local</h4>
+
+<p>if your remote server don't have access to your git repos or don't have access to run <code>composer install</code>  (e.g some internal web server)</p>
+
+<blockquote>
+<p>envoy run deploy_localrepo_install --branch=master --env=production</p>
+</blockquote>
+
+<p>The <strong>deploy_localrepo_install</strong> task will  clone repo locally and pack deps then scp to remote server and deploy links and etc.
+that will ONLY require your local server have access to remote server and git server.</p>
+
+<h3>
+<a id="rollback" class="anchor" href="#rollback" aria-hidden="true"><span class="octicon octicon-link"></span></a>Rollback</h3>
+
+<p>If you found your last deployment likely have some errors,you could simply run the rollback task on your local machine in the repository direcory</p>
+
+<blockquote>
+<p>envoy run rollback</p>
+</blockquote>
+
+<p>notice that will only relink your <em>current</em> release to previous release,
+it will NOT do the database migrate rollback.</p>
+
+<p>if you wanna rollback database migration you could run BEFORE you run <em>rollback</em> task:</p>
+
+<blockquote>
+<p>envoy run database_migrate_public_rollback --branch=master --env=production</p>
+</blockquote>
+
+<p>if you run <em>rollback</em> task twice ,you will got <em>current</em> release still symbolic link to last release.</p>
+
+<h2>
+<a id="how-it-works" class="anchor" href="#how-it-works" aria-hidden="true"><span class="octicon octicon-link"></span></a>How it Works</h2>
+
+<p>Your <code>$deploybasepath</code> directory will look something like this.</p>
+
+<pre><code>    mysite/
+    mysite2/
+    mysite3/
+</code></pre>
+
+<p>Your <code>$deploybasepath/$appname</code> directory will look something like this after you init and then deploy.</p>
+
+<pre><code>    releases/release_20150717032737/
+    releases/release_20150717034646/
+    current -&gt; ./releases/release_20150717034646
+    shared/storage/
+    tmp/
+    .env
+</code></pre>
+
+<p>As you can see, the <em>current</em> directory is symlinked to the latest deployment folder</p>
+
+<p>Inside one of your deployment folders looks like the following (excluded some laravel folders for space)</p>
+
+<pre><code>    app/
+    artisan
+    boostrap/
+    public/index.php
+    composer.json
+    .env -&gt; ../../.env
+    storage -&gt; ../../shared/storage
+    vendor/
+</code></pre>
+
+<p>The deployment folder .env file and storage directory are symlinked to the parent folders in the main (parent) path.</p>
+
+<h2>
+<a id="feature" class="anchor" href="#feature" aria-hidden="true"><span class="octicon octicon-link"></span></a>Feature</h2>
+
+<ul>
+<li>You could deploy multi projects with different $appname and config settings on same target eserver.</li>
+<li>Because of <em>Laravel Envoy</em> <strong>Could NOT invoke Task Macro form another Task Macro yet</strong>,
+You have to copy and paste one the block of Task Macros form (<code>deploy_mix_pack</code> | <code>deploy_mix_update</code> | <code>deploy_localrepo_install</code> | <code>deploy_remote_install</code>)
+to overwrite the <code>deploy</code> Task Macro code block to change the default behavior of <code>deploy</code> command.</li>
+<li>To explore more feature by RTFC, and custom task as you wish in your project.</li>
+</ul>
+
+<h2>
+<a id="notice" class="anchor" href="#notice" aria-hidden="true"><span class="octicon octicon-link"></span></a>Notice</h2>
+
+<ul>
+<li><p>http/https protocol might be ask for password for your private repos
+and that will break the git clone progress,
+use git protocol and setup a deploy key on your server and SCM service instead
+(e.g github repo -&gt;settings-&gt;Deploy keys and set <code>$repo = 'git@github.com:user/mysite.git'</code> in your <em>envoy.config.php</em>)</p></li>
+<li><p>the Task <code>cleanup_oldreleases</code> sometime may couldn't clean up all old release since your project contains too many files.
+and you could tweak keeps releases by change the command line <code>tail -n +4</code> 4 means keep 3 releases.</p></li>
+</ul>
+
+<h2>
+<a id="todo" class="anchor" href="#todo" aria-hidden="true"><span class="octicon octicon-link"></span></a>Todo</h2>
+
+<ul>
+<li>Make deploy command more flexible.</li>
+</ul>
+
+<h2>
+<a id="contributing" class="anchor" href="#contributing" aria-hidden="true"><span class="octicon octicon-link"></span></a>Contributing</h2>
+
+<p>Please submit improvements and fixes :)</p>
+
+<h2>
+<a id="author" class="anchor" href="#author" aria-hidden="true"><span class="octicon octicon-link"></span></a>Author</h2>
+
+<p><a href="http://axiong.me">Nick Fan</a></p>
+
+      <footer class="site-footer">
+        <span class="site-footer-owner"><a href="https://github.com/nickfan/envoy-deployscript">Envoy-deployscript</a> is maintained by <a href="https://github.com/nickfan">nickfan</a>.</span>
+
+        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
+      </footer>
+
+    </section>
+
+  
+  </body>
+</html>
+
