@@ -211,20 +211,29 @@
 @endtask
 @task('fetch_repo_localrepo',['on' => 'local'])
     echo "Repository cloning...";
+    echo {{ $local_envoydeploy_base }};
+    echo {{ $appname }};
     cd {{ $local_envoydeploy_base }};
-    [ -d {{ $local_envoydeploy_base }}/{{ $appname }} ] && rm -rf {{ $local_envoydeploy_base }}/{{ $appname }}
-    git clone {{ $repo }} --branch={{ $branch }} --depth=1 {{ $appname }};
+    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }} ] && echo "exists previous repo clone,need to remove.";
+    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }} ] && rm -rf {{ $local_envoydeploy_base }}/releases/{{ $appname }};
+    git clone {{ $repo }} --branch={{ $branch }} --depth=1 {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     echo "Repository cloned.";
 @endtask
 @task('copy_env_localrepo',['on' => 'local'])
-    [ -f {{ $local_dir }}/.env ] && cp -af {{ $local_dir }}/.env {{ $local_envoydeploy_base }}/{{ $appname }}/.env
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -af {{ $local_dir }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/{{ $appname }}/.env
     echo "Repo Environment file setup";
+    echo {{ $local_dir }};
+    echo {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }};
+    [ -f {{ $local_dir }}/.env.development ] && cp -af {{ $local_dir }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    [ -f {{ $local_dir }}/.env ] && cp -af {{ $local_dir }}/.env {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -af {{ $local_dir }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    echo "Repo Environment file setup done";
 @endtask
 @task('sync_shared',['on' => 'web'])
     {{--#cp -af {{ $release_dir }}/{{ $release }}/storage/* {{ $shared_dir }}/storage/;--}}
-    rsync --progress -e ssh -avzh --delay-updates --exclude "*.logs" {{ $release_dir }}/{{ $release }}/storage/ {{ $shared_dir }}/storage/
-    rm -rf {{ $release_dir }}/{{ $release }}/storage
+    rsync --progress -e ssh -avzh --delay-updates --exclude "*.logs" {{ $release_dir }}/{{ $release }}/storage/ {{ $shared_dir }}/storage/;
+    rm -rf {{ $release_dir }}/{{ $release }}/storage;
     ln -nfs {{ $shared_dir }}/storage {{ $release_dir }}/{{ $release }}/storage;
     echo "New Release Shared directory setup";
 @endtask
@@ -240,8 +249,8 @@
     echo "Environment file symbolic link setup";
 @endtask
 @task('chdir_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
-    echo "Change directory to {{ $local_envoydeploy_base }}/{{ $appname }}";
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
+    echo "Change directory to {{ $local_envoydeploy_base }}/releases/{{ $appname }}";
 @endtask
 @task('chdir_release',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
@@ -254,8 +263,8 @@
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm install
-    bower install
+    npm install;
+    bower install;
     echo "Dependencies installed.";
 @endtask
 @task('deps_install_local',['on' => 'local'])
@@ -265,19 +274,19 @@
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm install
-    bower install
+    npm install;
+    bower install;
     echo "Dependencies installed.";
 @endtask
 @task('deps_install_localrepo',['on' => 'local'])
     echo "Dependencies install...";
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     composer install --prefer-dist --no-scripts --no-interaction;
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm install
-    bower install
+    npm install;
+    bower install;
     echo "Dependencies installed.";
 @endtask
 @task('deps_update_remote',['on' => 'web'])
@@ -287,8 +296,8 @@
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm update
-    bower update
+    npm update;
+    bower update;
     echo "Dependencies updated.";
 @endtask
 @task('deps_update_local',['on' => 'local'])
@@ -298,19 +307,19 @@
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm update
-    bower update
+    npm update;
+    bower update;
     echo "Dependencies updated.";
 @endtask
 @task('deps_update_localrepo',['on' => 'local'])
     echo "Dependencies update...";
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     composer update -vv --no-scripts --no-interaction;
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm update
-    bower update
+    npm update;
+    bower update;
     echo "Dependencies updated.";
 @endtask
 @task('copy_custom_extra_remote',['on' => 'web'])
@@ -322,50 +331,52 @@
     cp -af extra/custom/* ./;
 @endtask
 @task('copy_custom_extra_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
-    cp -af extra/custom/* ./;
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
+    if [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/extra/custom ]; then
+        cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/extra/custom/* {{ $local_envoydeploy_base }}/releases/{{ $appname }}/;
+    fi
 @endtask
 @task('artisan_optimize_remote',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    php artisan config:cache
-    php artisan route:cache
+    php artisan config:cache;
+    php artisan route:cache;
 @endtask
 @task('artisan_optimize_local',['on' => 'local'])
     cd {{ $local_dir }};
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    php artisan config:cache
-    php artisan route:cache
+    php artisan config:cache;
+    php artisan route:cache;
 @endtask
 @task('artisan_optimize_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    php artisan config:cache
-    php artisan route:cache
+    php artisan config:cache;
+    php artisan route:cache;
 @endtask
 @task('artisan_reset_local',['on' => 'local'])
     cd {{ $local_dir }};
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    php artisan config:clear
-    php artisan route:clear
+    php artisan config:clear;
+    php artisan route:clear;
     {{--php artisan cache:clear--}}
 @endtask
 @task('artisan_reset_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    php artisan config:clear
-    php artisan route:clear
-    php artisan cache:clear
+    php artisan config:clear;
+    php artisan route:clear;
+    php artisan cache:clear;
 @endtask
 @task('pack_deps_local',['on' => 'local'])
     echo "pack deps...";
@@ -377,14 +388,14 @@
 @task('pack_deps_localrepo',['on' => 'local'])
     echo "pack deps...";
     [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
-    cd {{ $local_envoydeploy_base }}/{{ $appname }};
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
     tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
     echo "pack deps Done.";
 @endtask
 @task('pack_release_localrepo',['on' => 'local'])
     echo "pack release...";
     [ -f {{ $local_envoydeploy_base }}/releases/release.tgz ] && rm -rf {{ $local_envoydeploy_base }}/releases/release.tgz;
-    cd {{ $local_envoydeploy_base }};
+    cd {{ $local_envoydeploy_base }}/releases/;
     tar czf {{ $local_envoydeploy_base }}/releases/release.tgz {{ $appname }};
     echo "pack release Done.";
 @endtask
@@ -413,15 +424,15 @@
 @endtask
 @task('artisan_keygen',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
-    php artisan key:generate
+    php artisan key:generate;
 @endtask
 @task('artisan_down',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
-    php artisan down
+    php artisan down;
 @endtask
 @task('artisan_up',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
-    php artisan up
+    php artisan up;
 @endtask
 @task('database_migrate',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
