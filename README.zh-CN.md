@@ -20,7 +20,7 @@ Laravel Envoy 部署脚本
 ## 安装
 
 你的本地部署服务器/工作站/笔记本 必须通过composer全局安装过Laravel的Envoy工具 [Envoy](http://laravel.com/docs/5.1/envoy)
-	>composer global require "laravel/envoy=~1.0"
+>composer global require "laravel/envoy=~1.0"
 
 ## 用法
 
@@ -58,11 +58,11 @@ Laravel Envoy 部署脚本
 
 当你做好了基础的环境配置,和配置文件的设定, 在你的本地laravel项目根路径中执行以下命令来完成远程和本地部署环境的初始化工作:
 
-	> envoy run deploy_init
+> envoy run deploy_init
 
 你也可以在命令中指定环境变量 (类似于 artisan:migrate 指令) 和git的分支作为命令行参数
 
-	> envoy run deploy_init --branch=develop --env=development
+> envoy run deploy_init --branch=develop --env=development
 
 通常情况下你只需要执行一次这个任务.
 
@@ -71,42 +71,46 @@ Laravel Envoy 部署脚本
 ### 部署
 
 每次你想部署代码的时候,你只需要在你本地服务器/工作站的当前项目根路径中执行:
-	> envoy run deploy
+> envoy run deploy
 
 你也可以在命令中指定环境变量 (类似于 artisan:migrate 指令) 和git的分支作为命令行参数
 
-	>envoy run deploy --branch=develop --env=development
-#### 本地工作拷贝部署
-	如果你的远程服务器内存太小或者composer太慢无法在远程服务器执行`composer install`成功 (例如: 你在使用某些廉价的VPS服务器实例)
-	你可以使用 `deploy_mix_pack` 指令来替代 `deploy` 指令.
-	> envoy run deploy_mix_pack
+>envoy run deploy --branch=develop --env=development
 
-	**deploy_mix_pack** 任务 假设你当前的本地工作拷贝使用了和目标部署环境一样的git分支(如dev/master)一样的环境变量(development/production)
-	并且你在本地的工作拷贝中成功执行过 `composer install` 和可选的 `npm install` 或 `bower install` 任务指令(换句话说你的当前工作拷贝是你的调试上线环境).
-	( 你也可以注释/屏蔽掉Envoy.blade.php文件中的 `npm install` 或 `bower install` 对应的行,如果你的项目不需要用到npm/bower前端管理工具)
-	然后这个任务会将当前工作拷贝中的 `vendor` 和 `node_modules` 目录打包成 deps.tgz文件并scp拷贝到远程服务器的对应临时路径上去
-	再在远程服务器上克隆你的代码仓库,并完成后续的解压文件和软链接部署等相关工作.
+#### 本地工作拷贝部署
+
+如果你的远程服务器内存太小或者composer太慢无法在远程服务器执行`composer install`成功 (例如: 你在使用某些廉价的VPS服务器实例)
+你可以使用 `deploy_mix_pack` 指令来替代 `deploy` 指令.
+> envoy run deploy_mix_pack
+
+**deploy_mix_pack** 任务 假设你当前的本地工作拷贝使用了和目标部署环境一样的git分支(如dev/master)一样的环境变量(development/production)
+并且你在本地的工作拷贝中成功执行过 `composer install` 和可选的 `npm install` 或 `bower install` 任务指令(换句话说你的当前工作拷贝是你的调试上线环境).
+( 你也可以注释/屏蔽掉Envoy.blade.php文件中的 `npm install` 或 `bower install` 对应的行,如果你的项目不需要用到npm/bower前端管理工具)
+然后这个任务会将当前工作拷贝中的 `vendor` 和 `node_modules` 目录打包成 deps.tgz文件并scp拷贝到远程服务器的对应临时路径上去
+再在远程服务器上克隆你的代码仓库,并完成后续的解压文件和软链接部署等相关工作.
 
 #### 发布版本和依赖环境的本地构建和部署
-	如果你的远程服务器没有访问你git仓库的权限又或者无法顺利的执行`composer install` (例如:一些内部web服务器)
 
-	> envoy run deploy_localrepo_install --branch=master --env=production
+如果你的远程服务器没有访问你git仓库的权限又或者无法顺利的执行`composer install` (例如:一些内部web服务器)
 
-	**deploy_localrepo_install** 任务会在你本地临时部署路径中克隆和创建对应的git分支env环境变量的版本并执行构建好完整的依赖环境
-	然后打包成release.tgz传输到远程服务器后并完成后续的解压文件和软链接部署等相关工作.
+> envoy run deploy_localrepo_install --branch=master --env=production
+
+**deploy_localrepo_install** 任务会在你本地临时部署路径中克隆和创建对应的git分支env环境变量的版本并执行构建好完整的依赖环境
+然后打包成release.tgz传输到远程服务器后并完成后续的解压文件和软链接部署等相关工作.
 
 ### 回滚
-	如果你发现你最近一次部署的版本有问题,你可以执行`rollback`回滚任务来将软链接回滚到上一次部署的路径中去:
-	>envoy run rollback
 
-	注意回滚任务只会将*current*路径的软链接指向指向上一个发布版本,但**并不**会将本次的数据库迁移回滚,如果你需要回滚数据库迁移,
+如果你发现你最近一次部署的版本有问题,你可以执行`rollback`回滚任务来将软链接回滚到上一次部署的路径中去:
+>envoy run rollback
 
-	请**先**执行`database_migrate_public_rollback`任务:
-	>envoy run database_migrate_public_rollback --branch=master --env=production
+注意回滚任务只会将*current*路径的软链接指向指向上一个发布版本,但**并不**会将本次的数据库迁移回滚,如果你需要回滚数据库迁移,
 
-	再去执行*rollback*任务,来回滚软链接.
+请**先**执行`database_migrate_public_rollback`任务:
+>envoy run database_migrate_public_rollback --branch=master --env=production
 
-	如果你连续执行两次*rollback*任务,相当于*current*路径的软链接又将指向最后一次部署的路径.
+再去执行*rollback*任务,来回滚软链接.
+
+如果你连续执行两次*rollback*任务,相当于*current*路径的软链接又将指向最后一次部署的路径.
 
 
 ## 原理/设计规划
@@ -147,25 +151,27 @@ Laravel Envoy 部署脚本
 storage等公共数据在shared文件夹中并不随代码部署,节省了空间也保留延续了日志/应用cache等相关基础数据在应用中的使用
 
 ## 特性
-	* 你可以部署多个项目到相同的远程服务器使用不同的$appname和配置设定即可.
-	* 因为在 *Laravel Envoy* 中 **暂时还无法在任务宏中调用其他的任务宏**,
-	你可以通过拷贝粘贴来自于(`deploy_mix_pack` | `deploy_mix_update` | `deploy_localrepo_install` | `deploy_remote_install`) 任务宏中的代码块到
-	`deploy` 任务宏的代码区块中来改变默认的`deploy`任务行为.
-	你也可以通过屏蔽部分如 `copy_custom_extra_localrepo` 任务 或 `npm install` 和 `bower install` 指令来定制你所需要的部署设定.
 
-	* 想要了解更多特性? RTFC, 自己修改代码来适配你自己的项目.
+* 你可以部署多个项目到相同的远程服务器使用不同的$appname和配置设定即可.
+* 因为在 *Laravel Envoy* 中 **暂时还无法在任务宏中调用其他的任务宏**,
+你可以通过拷贝粘贴来自于(`deploy_mix_pack` | `deploy_mix_update` | `deploy_localrepo_install` | `deploy_remote_install`) 任务宏中的代码块到
+`deploy` 任务宏的代码区块中来改变默认的`deploy`任务行为.
+你也可以通过屏蔽部分如 `copy_custom_extra_localrepo` 任务 或 `npm install` 和 `bower install` 指令来定制你所需要的部署设定.
+
+* 想要了解更多特性? RTFC, 自己修改代码来适配你自己的项目.
 
 ## 提示
-	* http/https 协议的git仓库地址有可能需要你交互式输入密码,这会打断git的克隆流程所以在git的仓库配置项中使用git协议,
-	在你的scm管理服务中设定好deploy key来解决这一问题.
-	(例如 github 仓库 ->settings->Deploy keys 添加部署公钥,然后在*envoy.config.php*中设定使用git协议的地址: `$repo = 'git@github.com:user/mysite.git'`)
+* http/https 协议的git仓库地址有可能需要你交互式输入密码,这会打断git的克隆流程所以在git的仓库配置项中使用git协议,
+在你的scm管理服务中设定好deploy key来解决这一问题.
+(例如 github 仓库 ->settings->Deploy keys 添加部署公钥,然后在*envoy.config.php*中设定使用git协议的地址: `$repo = 'git@github.com:user/mysite.git'`)
 
-	* 清除老发布版本的任务`cleanup_oldreleases` 有时候无法确定完成清除任务如果你的代码项目中的文件太多(xargs无法接受太多文件项).
-	你也许需要自己手工到服务器上清理或尝试在每次部署完成后手工执行这一任务指令.
-	你可以调整服务器上保留的release发布版本份数,通过修改对应的指令行代码`tail -n +4` 4表示保留最近3次的发布版本.
+* 清除老发布版本的任务`cleanup_oldreleases` 有时候无法确定完成清除任务如果你的代码项目中的文件太多(xargs无法接受太多文件项).
+你也许需要自己手工到服务器上清理或尝试在每次部署完成后手工执行这一任务指令.
+你可以调整服务器上保留的release发布版本份数,通过修改对应的指令行代码`tail -n +4` 4表示保留最近3次的发布版本.
 
 ## 待改进
- * 把deploy任务改进的更灵活
+
+* 把deploy任务改进的更灵活
 
 ## 贡献代码
 

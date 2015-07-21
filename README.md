@@ -21,7 +21,7 @@ Notice that your local server/machine should configured to use [SSH Key-Based Au
 
 Your must have Envoy installed using the Composer global command:
 
-	>composer global require "laravel/envoy=~1.0"
+>composer global require "laravel/envoy=~1.0"
 
 ## Usage
 
@@ -53,15 +53,16 @@ and you could add the dot env settings file to your .gitignore file.
 
 >`($deployed_project_root)/node_modules/laravel-elixir/Config.js`
 it's usually we use this for custom laravel-elixir config setting and etc.
+
 ### Init
 
 When you're happy with the config, run the init task on your local machine by running the following in the repository directory
 
-	> envoy run deploy_init
+> envoy run deploy_init
 
 You can specify the Laravel environment (for artisan:migrate command) and git branch as options
 
-	> envoy run deploy_init --branch=develop --env=development
+> envoy run deploy_init --branch=develop --env=development
 
 You only need to run the init task once.
 
@@ -71,41 +72,44 @@ The init task creates a `.env` file in your app root path (e.g /var/www/mysite/.
 
 Each time you want to deploy simply run the deploy task on your local machine in the repository direcory
 
-	>envoy run deploy
+>envoy run deploy
 
 You can specify the Laravel environment (for artisan:migrate command) and git branch as options
 
-	>envoy run deploy --branch=develop --env=development
-#### Working copy deploy
-	if your remote server just have too small RAM to run `composer install` on your server (e.g some cheap VPS server instance)
-	you could use `deploy_mix_pack` instead of `deploy` command.
-	> envoy run deploy_mix_pack
+>envoy run deploy --branch=develop --env=development
 
-	The **deploy_mix_pack** task assume your local working copy have the same branch same env for remote deploy repo
-	and you have `composer install` and optional `npm install` or `bower install` task done on your local working copy.
-	( you could disable that `npm install` or `bower install` by comment out that line in Envoy.blade.php if you don't need/have npm/bower installed)
-	then it will pack `vendor` and `node_modules` into deps.tgz and scp to the remote server to deploy to the target directory
-	and git clone repo at remote server and deploy links and etc.
+#### Working copy deploy
+
+if your remote server just have too small RAM to run `composer install` on your server (e.g some cheap VPS server instance)
+you could use `deploy_mix_pack` instead of `deploy` command.
+>envoy run deploy_mix_pack
+
+The **deploy_mix_pack** task assume your local working copy have the same branch same env for remote deploy repo
+and you have `composer install` and optional `npm install` or `bower install` task done on your local working copy.
+( you could disable that `npm install` or `bower install` by comment out that line in Envoy.blade.php if you don't need/have npm/bower installed)
+then it will pack `vendor` and `node_modules` into deps.tgz and scp to the remote server to deploy to the target directory
+and git clone repo at remote server and deploy links and etc.
 
 #### Release and dependencies build and deploy from local
-	if your remote server don't have access to your git repos or don't have access to run `composer install`  (e.g some internal web server)
-	> envoy run deploy_localrepo_install --branch=master --env=production
 
-	The **deploy_localrepo_install** task will  clone repo locally and pack deps then scp to remote server and deploy links and etc.
-	that will ONLY require your local server have access to remote server and git server.
+if your remote server don't have access to your git repos or don't have access to run `composer install`  (e.g some internal web server)
+> envoy run deploy_localrepo_install --branch=master --env=production
+
+The **deploy_localrepo_install** task will  clone repo locally and pack deps then scp to remote server and deploy links and etc.
+that will ONLY require your local server have access to remote server and git server.
 
 ### Rollback
-	If you found your last deployment likely have some errors,you could simply run the rollback task on your local machine in the repository direcory
+If you found your last deployment likely have some errors,you could simply run the rollback task on your local machine in the repository direcory
 
-	>envoy run rollback
+>envoy run rollback
 
-	notice that will only relink your *current* release to previous release,
-	it will NOT do the database migrate rollback.
+notice that will only relink your *current* release to previous release,
+it will NOT do the database migrate rollback.
 
-	if you wanna rollback database migration you could run BEFORE you run *rollback* task:
-	 >envoy run database_migrate_public_rollback --branch=master --env=production
+if you wanna rollback database migration you could run BEFORE you run *rollback* task:
+>envoy run database_migrate_public_rollback --branch=master --env=production
 
-	if you run *rollback* task twice ,you will got *current* release still symbolic link to last release.
+if you run *rollback* task twice ,you will got *current* release still symbolic link to last release.
 
 ## How it Works
 
@@ -144,23 +148,26 @@ Inside one of your deployment folders looks like the following (excluded some la
 The deployment folder .env file and storage directory are symlinked to the parent folders in the main (parent) path.
 
 ## Feature
-	* You could deploy multi projects with different $appname and config settings on same target eserver.
-	* Because of *Laravel Envoy* **Could NOT invoke Task Macro form another Task Macro yet**,
-	You have to copy and paste one the block of Task Macros form (`deploy_mix_pack` | `deploy_mix_update` | `deploy_localrepo_install` | `deploy_remote_install`)
-	to overwrite the `deploy` Task Macro code block to change the default behavior of `deploy` command.
-	* To explore more feature by RTFC, and custom task as you wish in your project.
+
+* You could deploy multi projects with different $appname and config settings on same target eserver.
+* Because of *Laravel Envoy* **Could NOT invoke Task Macro form another Task Macro yet**,
+You have to copy and paste one the block of Task Macros form (`deploy_mix_pack` | `deploy_mix_update` | `deploy_localrepo_install` | `deploy_remote_install`)
+to overwrite the `deploy` Task Macro code block to change the default behavior of `deploy` command.
+* To explore more feature by RTFC, and custom task as you wish in your project.
 
 ## Notice
-	* http/https protocol might be ask for password for your private repos
-	and that will break the git clone progress,
-	use git protocol and setup a deploy key on your server and SCM service instead
-	(e.g github repo ->settings->Deploy keys and set `$repo = 'git@github.com:user/mysite.git'` in your *envoy.config.php*)
 
-	* the Task `cleanup_oldreleases` sometime may couldn't clean up all old release since your project contains too many files.
-	and you could tweak keeps releases by change the command line `tail -n +4` 4 means keep 3 releases.
+* http/https protocol might be ask for password for your private repos
+and that will break the git clone progress,
+use git protocol and setup a deploy key on your server and SCM service instead
+(e.g github repo ->settings->Deploy keys and set `$repo = 'git@github.com:user/mysite.git'` in your *envoy.config.php*)
+
+* the Task `cleanup_oldreleases` sometime may couldn't clean up all old release since your project contains too many files.
+and you could tweak keeps releases by change the command line `tail -n +4` 4 means keep 3 releases.
 
 ## Todo
- * Make deploy command more flexible.
+
+* Make deploy command more flexible.
 
 ## Contributing
 
