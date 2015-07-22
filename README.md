@@ -2,12 +2,16 @@
 Laravel Envoy Deployment Script
 
 Base on [papertank/envoy-deploy](https://github.com/papertank/envoy-deploy)
+
 Inspired by
+
 * [papertank/envoy-deploy](https://github.com/papertank/envoy-deploy)
 * [Deploying with Envoy (Cast)](https://serversforhackers.com/video/deploying-with-envoy-cast)
 * [Enhancing Envoy Deployment](https://serversforhackers.com/video/enhancing-envoy-deployment)
 * [An Envoyer-like deployment script using Envoy](https://iatstuti.net/blog/an-envoyer-like-deployment-script-using-envoy)
 * [Rocketeer](http://rocketeer.autopergamene.eu/)
+* [Deploy your app to DigitialOcean from Codeship using Envoy](http://laravelista.com/deploy-your-app-to-digitialocean-from-codeship-using-envoy/)
+
 
 This repository includes an Envoy.blade.php script that is designed to provide a very basic "zero-downtime" deployment option using the open-source [Laravel Envoy](http://laravel.com/docs/5.1/envoy) tool.
 
@@ -41,28 +45,29 @@ You should set your website root directory (in vhost / server config) to `$deplo
 otherwise if you specify the Laravel environment (e.g development/testing) create or symbolic the corresponding env file (e.g .env.development/.env.testing)
 and you could add the dot env settings file to your .gitignore file.
 
-6. you should create an directory `extra/custom/` in your laravel project root, the deploy script will copy every directories and files in it to overwrite the files in target server.
+6. you could create an directory `extra/custom/` in your laravel project root, the deploy script will copy every directories and files in it to overwrite the files in target server.
 
 >for example:
 
->you create file:
+>your created file:
 
 >`extra/custom/node_modules/laravel-elixir/Config.js`
 
 >after deploy it will copy and overwrite to
 
 >`($deployed_project_root)/node_modules/laravel-elixir/Config.js`
-it's usually we use this for custom laravel-elixir config setting and etc.
+
+>it's usually we use this for custom laravel-elixir config setting and other staff.
 
 ### Init
 
 When you're happy with the config, run the init task on your local machine by running the following in the repository directory
 
-> envoy run deploy_init
+>envoy run deploy_init
 
 You can specify the Laravel environment (for artisan:migrate command) and git branch as options
 
-> envoy run deploy_init --branch=develop --env=development
+>envoy run deploy_init --branch=develop --env=development
 
 You only need to run the init task once.
 
@@ -92,8 +97,9 @@ and git clone repo at remote server and deploy links and etc.
 
 #### Release and dependencies build and deploy from local
 
-if your remote server don't have access to your git repos or don't have access to run `composer install`  (e.g some internal web server)
-> envoy run deploy_localrepo_install --branch=master --env=production
+if your remote server don't have access to your git repos or wouldn't be able to execute `composer install` successfully (e.g some internal web server got slow internet connection case composer install/update break down.)
+
+>envoy run deploy_localrepo_install --branch=master --env=production
 
 The **deploy_localrepo_install** task will  clone repo locally and pack deps then scp to remote server and deploy links and etc.
 that will ONLY require your local server have access to remote server and git server.
@@ -106,7 +112,7 @@ If you found your last deployment likely have some errors,you could simply run t
 notice that will only relink your *current* release to previous release,
 it will NOT do the database migrate rollback.
 
-if you wanna rollback database migration you could run BEFORE you run *rollback* task:
+if you wanna rollback database migration you could run **BEFORE** you run *rollback* task:
 >envoy run database_migrate_public_rollback --branch=master --env=production
 
 if you run *rollback* task twice ,you will got *current* release still symbolic link to last release.
@@ -164,6 +170,25 @@ use git protocol and setup a deploy key on your server and SCM service instead
 
 * the Task `cleanup_oldreleases` sometime may couldn't clean up all old release since your project contains too many files.
 and you could tweak keeps releases by change the command line `tail -n +4` 4 means keep 3 releases.
+
+
+## Example Usage
+
+you could [Deploy your app to DigitialOcean from Codeship using Envoy](http://laravelista.com/deploy-your-app-to-digitialocean-from-codeship-using-envoy/)
+with this Envoy.blade.php and envoy.config.php script instead and modify the last step command as you wish.
+
+you might want to change the command from:
+
+>~/.composer/vendor/bin/envoy run deploy
+
+to:
+
+>~/.composer/vendor/bin/envoy run deploy_localrepo_install --branch=master --env=production
+
+if your laravel project runs on a small RAM (e.g 512MB) droplet.
+
+and the `deploy_localrepo_install ` comand will do the `composer install` and pack staff on the deployment server(codeship VM here).so that your target server(droplet) won't have to run `composer install` and `git clone` on it.
+
 
 ## Todo
 

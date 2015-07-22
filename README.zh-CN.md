@@ -2,12 +2,16 @@
 Laravel Envoy 部署脚本
 
 基于 [papertank/envoy-deploy](https://github.com/papertank/envoy-deploy) 开发
+
 由以下文章或代码启发而来:
+
 * [papertank/envoy-deploy](https://github.com/papertank/envoy-deploy)
 * [Deploying with Envoy (Cast)](https://serversforhackers.com/video/deploying-with-envoy-cast)
 * [Enhancing Envoy Deployment](https://serversforhackers.com/video/enhancing-envoy-deployment)
 * [An Envoyer-like deployment script using Envoy](https://iatstuti.net/blog/an-envoyer-like-deployment-script-using-envoy)
 * [Rocketeer](http://rocketeer.autopergamene.eu/)
+* [Deploy your app to DigitialOcean from Codeship using Envoy](http://laravelista.com/deploy-your-app-to-digitialocean-from-codeship-using-envoy/)
+
 
 这个源代码仓库包含了一个Envoy.blade.php脚本模板文件 设计目的是提供一个基本的"不间断"部署功能 基于laravel的开源附属ssh远程工具程序 [Laravel Envoy](http://laravel.com/docs/5.1/envoy)
 
@@ -91,7 +95,7 @@ Laravel Envoy 部署脚本
 
 #### 发布版本和依赖环境的本地构建和部署
 
-如果你的远程服务器没有访问你git仓库的权限又或者无法顺利的执行`composer install` (例如:一些内部web服务器)
+如果你的远程服务器没有访问你git仓库的权限又或者无法顺利的执行`composer install` (例如:一些内部web服务器网络状况不好导致无法顺利的执行composer install/update)
 
 > envoy run deploy_localrepo_install --branch=master --env=production
 
@@ -168,6 +172,25 @@ storage等公共数据在shared文件夹中并不随代码部署,节省了空间
 * 清除老发布版本的任务`cleanup_oldreleases` 有时候无法确定完成清除任务如果你的代码项目中的文件太多(xargs无法接受太多文件项).
 你也许需要自己手工到服务器上清理或尝试在每次部署完成后手工执行这一任务指令.
 你可以调整服务器上保留的release发布版本份数,通过修改对应的指令行代码`tail -n +4` 4表示保留最近3次的发布版本.
+
+
+
+## 使用样例
+
+你可以 [从Codeship上使用Envoy部署你的应用到DigitialOcean](http://laravelista.com/deploy-your-app-to-digitialocean-from-codeship-using-envoy/)
+使用当前的这个Envoy.blade.php 脚本和 envoy.config.php 配置文件来替代其中的Envoy.blade.php模板，如果需要也可以替换最后一个步奏的部署命令.
+
+你可能需要把部署命令从:
+
+>~/.composer/vendor/bin/envoy run deploy
+
+改变成:
+
+>~/.composer/vendor/bin/envoy run deploy_localrepo_install --branch=master --env=production
+
+如果你的laravel项目运行在一个小内存的(比如 512MB)的实例上.
+
+部署指令 `deploy_localrepo_install ` 会在部署服务器(这里是Codeship的虚拟机)上运行 `composer install`和压缩等其他相关任务,这样你的小内存服务器就可以不必运行`composer install`和`git clone`就可以直接运行应用了。
 
 ## 待改进
 

@@ -221,8 +221,6 @@
 @endtask
 @task('copy_env_localrepo',['on' => 'local'])
     echo "Repo Environment file setup";
-    echo {{ $local_dir }};
-    echo {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }};
     [ -f {{ $local_dir }}/.env.development ] && cp -af {{ $local_dir }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     [ -f {{ $local_dir }}/.env ] && cp -af {{ $local_dir }}/.env {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -af {{ $local_dir }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
@@ -324,11 +322,15 @@
 @endtask
 @task('copy_custom_extra_remote',['on' => 'web'])
     cd {{ $release_dir }}/{{ $release }};
-    cp -af extra/custom/* ./;
+    if [ -d {{ $release_dir }}/{{ $release }}/extra/custom ]; then
+        cp -af {{ $release_dir }}/{{ $release }}/extra/custom/* {{ $release_dir }}/{{ $release }}/;
+    fi
 @endtask
 @task('copy_custom_extra_local',['on' => 'local'])
     cd {{ $local_dir }};
-    cp -af extra/custom/* ./;
+    if [ -d {{ $local_dir }}/extra/custom ]; then
+        cp -af {{ $local_dir }}/extra/custom/* {{ $local_dir }}/;
+    fi
 @endtask
 @task('copy_custom_extra_localrepo',['on' => 'local'])
     cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
