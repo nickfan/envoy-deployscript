@@ -237,8 +237,8 @@
 @endtask
 @task('update_permissions',['on' => 'web'])
     cd {{ $release_dir }};
-    chgrp -R {{$serviceowner}} {{ $release }};
-    chmod -R ug+rwx {{ $release }};
+    chgrp -R {{$serviceowner}} {{ $release }} {{ $shared_dir }}/storage;
+    chmod -R ug+rwx {{ $release }} {{ $shared_dir }}/storage;
 @endtask
 @task('envfile_link',['on' => 'web'])
     [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
