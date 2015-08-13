@@ -508,7 +508,7 @@
     echo 'Cleanup up old releases';
     cd {{ $release_dir }};
     {{--ls -1d release_* | head -n -3 | xargs -d '\n' rm -Rf;--}}
-    ls -dt {{ $release_dir }}/* | tail -n +4 | xargs -d '\n' rm -rf;
+    (ls -rd {{ $release_dir }}/*|head -n 4;ls -d {{ $release_dir }}/*)|sort|uniq -u|xargs rm -rf;
     echo "Cleanup up done.";
 @endtask
 @task('cleanup_tempfiles_local',['on' => 'local'])
