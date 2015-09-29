@@ -39,18 +39,37 @@
 @servers(['local'=>'localhost','web' => $ssh])
 
 @macro('deploy')
-    {{--deploy_localrepo_install--}}
+    {{--deploy_localrepo_pack--}}
     show_env
     init_basedir_local
     fetch_repo_localrepo
     copy_env_localrepo
+    pack_deps_local
     chdir_localrepo
-    deps_install_localrepo
+    deps_extract_localrepo
     copy_custom_extra_localrepo
     artisan_optimize_localrepo
     pack_release_localrepo
     init_basedir_remote
     scp_release_to_remote
+    extract_release_on_remote
+    sync_shared
+    update_permissions
+    envfile_link
+    artisan_optimize_remote
+    database_migrate
+    link_newrelease
+    cleanup_oldreleases
+    cleanup_tempfiles_local
+    cleanup_tempfiles_remote
+    notice_done
+@endmacro
+
+@macro('mandeployrelease')
+    {{-- man scp release.tgz to [deploy_base]/[app]/tmp/ --}}
+    {{--man scp  & deploy_localrepo_pack--}}
+    show_env
+    init_basedir_local
     extract_release_on_remote
     sync_shared
     update_permissions
@@ -121,6 +140,32 @@
     copy_env_localrepo
     chdir_localrepo
     deps_install_localrepo
+    copy_custom_extra_localrepo
+    artisan_optimize_localrepo
+    pack_release_localrepo
+    init_basedir_remote
+    scp_release_to_remote
+    extract_release_on_remote
+    sync_shared
+    update_permissions
+    envfile_link
+    artisan_optimize_remote
+    database_migrate
+    link_newrelease
+    cleanup_oldreleases
+    cleanup_tempfiles_local
+    cleanup_tempfiles_remote
+    notice_done
+@endmacro
+@macro('deploy_localrepo_pack', ['on' => 'local'])
+    {{--deploy_localrepo_pack--}}
+    show_env
+    init_basedir_local
+    fetch_repo_localrepo
+    copy_env_localrepo
+    pack_deps_local
+    chdir_localrepo
+    deps_extract_localrepo
     copy_custom_extra_localrepo
     artisan_optimize_localrepo
     pack_release_localrepo
@@ -286,6 +331,18 @@
     npm install;
     bower install;
     echo "Dependencies installed.";
+@endtask
+@task('deps_extract_localrepo',['on' => 'local'])
+    echo "Dependencies extract...";
+    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
+    {{--composer install --prefer-dist --no-scripts --no-interaction;--}}
+    tar zxf {{ $local_envoydeploy_base }}/deps/deps.tgz
+    composer dump-autoload --optimize;
+    php artisan clear-compiled --env={{ $env }};
+    php artisan optimize --env={{ $env }};
+    {{--npm install;--}}
+    {{--bower install;--}}
+    echo "Dependencies extracted.";
 @endtask
 @task('deps_update_remote',['on' => 'web'])
     echo "Dependencies update...";
