@@ -64,7 +64,9 @@
     cleanup_tempfiles_remote
     notice_done
 @endmacro
-
+@macro('manscprelease')
+    scp_release_to_remote
+@endmacro
 @macro('mandeployrelease')
     {{-- man scp release.tgz to [deploy_base]/[app]/tmp/ --}}
     {{--man scp  & deploy_localrepo_pack--}}
