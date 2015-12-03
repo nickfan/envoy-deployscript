@@ -37,7 +37,9 @@
     $local_envoydeploy_base = $local_dir.'/'.$local_envoydeploy_dirname;
 @endsetup
 @servers(['local'=>'localhost','web' => $ssh])
-
+@macro('help')
+    showcmdlist
+@endmacro
 @macro('deploy')
     {{--deploy_localrepo_pack--}}
     show_env
@@ -206,11 +208,25 @@
     init_basedir_local
     init_basedir_remote
     scp_env_to_remote
+    link_env_on_remote
 @endmacro
 @macro('rollback')
     {{--database_migrate_public_rollback--}}
     link_rollback
 @endmacro
+@task('showcmdlist',['on' => 'local'])
+    echo '----';
+    echo 'deploy';
+    echo 'manscprelease';
+    echo 'mandeployrelease';
+    echo 'deploy_mix_pack';
+    echo 'deploy_localrepo_install';
+    echo 'deploy_remote_install';
+    echo 'deploy_init';
+    echo 'rollback';
+    echo 'show_env';
+    echo '----';
+@endtask
 @task('show_env',['on' => 'web'])
     echo '...';
     echo 'Current Release Name: {{$release}}';
@@ -232,8 +248,20 @@
 @endtask
 @task('scp_env_to_remote',['on' => 'local'])
     echo "scp env to remote...";
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $local_dir }}/.env.{{ $env }} {{ $ssh }}:{{ $app_base }}/.env;
+    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $local_dir }}/.env.{{ $env }} {{ $ssh }}:{{ $app_base }}/.env.{{ $env }};
+    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $ssh }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
     echo "scp env to remote Done.";
+@endtask
+@task('link_env_on_remote',['on' => 'web'])
+    echo "link env on remote...";
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && rm -rf {{ $app_base }}/.env;
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $app_base }}/.env;
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && chgrp -h {{$serviceowner}} {{ $app_base }}/.env;
+
+    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && rm -rf {{ $app_base }}/envoy.config.php;
+    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $app_base }}/envoy.config.php;
+    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && chgrp -h {{$serviceowner}} {{ $app_base }}/envoy.config.php;
+    echo "link env on remote Done.";
 @endtask
 @task('fetch_repo_remote',['on' => 'web'])
     echo "Repository cloning...";
@@ -269,9 +297,9 @@
 @task('copy_env_localrepo',['on' => 'local'])
     echo "Repo Environment file setup";
     [ -f {{ $local_dir }}/.env.development ] && cp -af {{ $local_dir }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
+    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     [ -f {{ $local_dir }}/.env ] && cp -af {{ $local_dir }}/.env {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -af {{ $local_dir }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
     echo "Repo Environment file setup done";
 @endtask
@@ -291,6 +319,10 @@
     [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
     ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
     chgrp -h {{$serviceowner}} {{ $release_dir }}/{{ $release }}/.env;
+
+    [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && rm -rf {{ $release_dir }}/{{ $release }}/envoy.config.php;
+    ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
+    chgrp -h {{$serviceowner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
     echo "Environment file symbolic link setup";
 @endtask
 @task('chdir_localrepo',['on' => 'local'])
@@ -330,8 +362,8 @@
     composer dump-autoload --optimize;
     php artisan clear-compiled --env={{ $env }};
     php artisan optimize --env={{ $env }};
-    npm install;
-    bower install;
+    {{--npm install;--}}
+    {{--bower install;--}}
     echo "Dependencies installed.";
 @endtask
 @task('deps_extract_localrepo',['on' => 'local'])
@@ -443,14 +475,16 @@
     echo "pack deps...";
     [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
     cd {{ $local_dir }};
-    tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
+    [ -d {{ $local_dir }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
+    [ ! -d {{ $local_dir }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor;
     echo "pack deps Done.";
 @endtask
 @task('pack_deps_localrepo',['on' => 'local'])
     echo "pack deps...";
     [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
     cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
+    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
+    [ ! -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor;
     echo "pack deps Done.";
 @endtask
 @task('pack_release_localrepo',['on' => 'local'])
