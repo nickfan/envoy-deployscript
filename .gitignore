@@ -1,2 +1,55 @@
 # ignore for deployment tmp path
 .envoydeploy/
+
+# you can add multi version of envoy.config to your vcs and make a symbolic link named envoy.config.php
+#envoy.config.local.php
+#envoy.config.testing.php
+#envoy.config.development.php
+#envoy.config.production.php
+
+envoy.config.php
+envoy.config.my.php
+
+
+# below is a common laravel project ignore list
+/vendor
+.env
+.env.my
+.env.local
+.env.development
+.env.testing
+.env.production
+
+# Composer
+composer.phar
+composer.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Packages And Apps
+.project
+/.settings
+vagrant
+.vagrant
+.phpcomplete_extended/
+/tags
+_ide_helper.php
+.phpstorm.meta.php
+.rocketeer
+.tags
+.tags1
+.remote-sync.json
+.bundle
+.sass-cache
+.tmp
+nbproject/*
+.idea/
+nbproject/private/
+nbbuild/
+nbdist/
+nbactions.xml
+nb-configuration.xml
+.nb-gradle/

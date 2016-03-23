@@ -1,625 +1,1079 @@
 @include('envoy.config.php');
 @setup
-    if ( ! isset($appname) ) {
+    if ( ! isset($app_name) ) {
         throw new Exception('App Name is not set');
     }
-    if ( ! isset($ssh) ) {
-        throw new Exception('SSH login username/host is not set');
+    if ( ! isset($connection_string) ) {
+        throw new Exception('connection string (SSH login username/host is not set)');
     }
-    if ( ! isset($repo) ) {
-        throw new Exception('Git repository is not set');
+    if ( ! isset($source_repo)){
+        throw new Exception('VCS Source repository is not set');
     }
 
-    if ( ! isset($serviceowner) ) {
+    if ( ! isset($service_owner) ) {
         throw new Exception('Service Owner is not set');
     }
-    if ( ! isset($deploybasepath) ) {
-        throw new Exception('Path is not set');
+
+    if ( ! isset($pack_mode) ) {
+        throw new Exception('Pack Mode is not set');
     }
-    if ( substr($deploybasepath, 0, 1) !== '/' ) {
-        throw new Exception('Careful - your path does not begin with /');
+    if ( ! isset($deploy_mode) ) {
+        throw new Exception('Deploy Mode is not set');
+    }
+    if ( ! isset($settings) ) {
+        throw new Exception('Misc Settings is not set');
+    }
+
+
+    if ( ! isset($deploy_basepath) ) {
+        throw new Exception('Base Path is not set');
+    }
+
+    if ( ! isset($release_keep_count) ) {
+        throw new Exception('Release Keep Count is not set');
+    }
+
+    if ( intval($release_keep_count)<1 ) {
+        throw new Exception('Release Keep Count must greater than 1');
+    }
+
+    if ( substr($deploy_basepath, 0, 1) !== '/' ) {
+        throw new Exception('Careful - your base path does not begin with /');
     }
     $now = new DateTime();
     $dateDisplay = $now->format('Y-m-d H:i:s');
     $date = $now->format('YmdHis');
-    $env = isset($env) ? $env : "production";
-    $branch = isset($branch) ? $branch : "master";
-    $deploybasepath = rtrim($deploybasepath, '/');
-    $app_base = $deploybasepath.'/'.$appname;
+    $env = isset($env) ? $env : $settings['env_default'];
+    $branch = isset($branch) ? $branch : $settings['branch_default'];
+    $deploy_mode = trim(strtolower($deploy_mode));
+    if($connection_port!=22){
+        $port_parameter_scp = ' -p '.$connection_port;
+        $port_parameter_rsync = ' --port '.$connection_port;
+    }else{
+        $port_parameter_scp = '';
+        $port_parameter_rsync = '';
+    }
+    $excludeSharedDirPattern = '';
+    if(!empty($shared_subdirs)){
+        foreach($shared_subdirs as $subdirname){
+            $excludeSharedDirPattern.= ' --exclude="/'.$subdirname.'/"';
+        }
+    }
+    $deploy_basepath = rtrim($deploy_basepath, '/');
+    $app_base = $deploy_basepath.'/'.$app_name;
+    $source_name = 'source';
+    $version_name = 'current';
+    $source_dir = $app_base.'/'.$source_name;
     $release_dir = $app_base.'/releases';
-    $app_dir = $app_base.'/current';
-    $prev_dir = $app_base.'/prevrelease';
-    $last_dir = $app_base.'/lastrelease';
+    $version_dir = $app_base.'/versions';
     $shared_dir = $app_base.'/shared';
+    $tmp_dir = $app_base.'/tmp';
+    $app_dir = $app_base.'/'.$version_name;
+    $releaseprev_dir_incr = $version_dir.'/releaseprev_incr';
+    $releaselast_dir_incr = $version_dir.'/releaselast_incr';
+    $releaseprev_dir_link = $version_dir.'/releaseprev_link';
+    $releaselast_dir_link = $version_dir.'/releaselast_link';
+    $releasecurrent_dir_link = $version_dir.'/releasecurrent_link';
+
     $release = isset($release) ? $release :'release_' . date('YmdHis');
+
     $local_dir = getcwd();
-    $local_envoydeploy_dirname = '.envoydeploy';
-    $local_envoydeploy_base = $local_dir.'/'.$local_envoydeploy_dirname;
+    $localdeploy_dirname = '.envoydeploy';
+    $localdeploy_base = $local_dir.'/'.$localdeploy_dirname;
+    $localdeploy_source_dir = $localdeploy_base.'/'.$source_name;
+    $localdeploy_tmp_dir = $localdeploy_base.'/tmp';
+
+    $spec_procs = array(
+        'pack_localpack'=>array(
+            'show_env_local',
+            'init_basedir_local',
+            'updaterepo_localsrc',
+            'envsetup_localsrc',
+            'depsinstall_localsrc',
+            'extracustomoverwrite_localsrc',
+            'runtimeoptimize_localsrc',
+            'packrelease_localsrc',
+        ),
+        'rcp_localpack'=>array(
+            'rcpreleasepack_to_remote',
+        ),
+        'extract_localpack'=>array(
+            'extractreleasepack_on_remote',
+        ),
+        'pack_remotepack'=>array(
+            'show_env_remote',
+            'init_basedir_remote',
+            'updaterepo_remotesrc',
+            'envsetup_remotesrc',
+            'depsinstall_remotesrc',
+            'extracustomoverwrite_remotesrc',
+            'runtimeoptimize_remotesrc',
+        ),
+        'subproc_releasesetup'=>array(
+            'syncshareddata_remotesrc',
+            'prepare_remoterelease',
+            'baseenvlink_remoterelease',
+            'depsreinstall_remoterelease',
+        ),
+        'subproc_versionsetup'=>array(
+            'syncreleasetoapp_version',
+            'databasemigrate_version',
+            'customtask_on_deploy',
+            'cleanupoldreleases_on_remote',
+            'cleanup_tempfiles_local',
+            'cleanup_tempfiles_remote',
+        ),
+    );
+    $deploy_macro_context = '';
+    if($pack_mode=='local'){
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['pack_localpack']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['rcp_localpack']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['extract_localpack']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_releasesetup']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_versionsetup']);
+    }else{
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['pack_remotepack']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_releasesetup']).PHP_EOL;
+        $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_versionsetup']);
+    }
 @endsetup
-@servers(['local'=>'localhost','web' => $ssh])
+@servers(['local'=>'localhost','service' => $connection_string])
+
+@task('customtask_on_deploy',['on' => 'service'])
+    if [ {{ intval($settings['enable_custom_task_after_deploy']) }} -eq 1 ]; then
+        echo 'Calling Custom Task On Deploy...';
+        cd {{ $app_dir }};
+        {{-- Call your custom task on deploy eg: --}}
+        {{-- php artisan --}}
+        echo "Custom Task done.";
+    fi
+@endtask
+
 @macro('help')
-    showcmdlist
-@endmacro
-@macro('deploy')
-    {{--deploy_localrepo_pack--}}
-    show_env
-    init_basedir_local
-    fetch_repo_localrepo
-    copy_env_localrepo
-    pack_deps_local
-    chdir_localrepo
-    deps_extract_localrepo
-    copy_custom_extra_localrepo
-    artisan_optimize_localrepo
-    pack_release_localrepo
-    init_basedir_remote
-    scp_release_to_remote
-    extract_release_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    notice_done
-@endmacro
-@macro('manscprelease')
-    scp_release_to_remote
-@endmacro
-@macro('mandeployrelease')
-    {{-- man scp release.tgz to [deploy_base]/[app]/tmp/ --}}
-    {{--man scp  & deploy_localrepo_pack--}}
-    show_env
-    init_basedir_local
-    extract_release_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    notice_done
+    show_cmd_list
 @endmacro
 
-@macro('deploy_mix_pack', ['on' => 'local'])
-    {{--deploy_mix_pack--}}
-    show_env
-    init_basedir_local
-    update_repo_local
-    copy_custom_extra_local
-    artisan_optimize_local
-    pack_deps_local
-    init_basedir_remote
-    fetch_repo_remote
-    scp_deps_to_remote
-    extract_deps_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    artisan_reset_local
-    notice_done
+@macro('show_env')
+    show_env_local
+    show_env_remote
 @endmacro
-@macro('deploy_mix_update', ['on' => 'local'])
-    {{--deploy_mix_update--}}
-    show_env
-    init_basedir_local
-    update_repo_local
-    deps_update_local
-    copy_custom_extra_local
-    artisan_optimize_local
-    pack_deps_local
-    init_basedir_remote
-    fetch_repo_remote
-    scp_deps_to_remote
-    extract_deps_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    artisan_reset_local
-    notice_done
-@endmacro
-@macro('deploy_localrepo_install', ['on' => 'local'])
-    {{--deploy_localrepo_install--}}
-    show_env
-    init_basedir_local
-    fetch_repo_localrepo
-    copy_env_localrepo
-    chdir_localrepo
-    deps_install_localrepo
-    copy_custom_extra_localrepo
-    artisan_optimize_localrepo
-    pack_release_localrepo
-    init_basedir_remote
-    scp_release_to_remote
-    extract_release_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    notice_done
-@endmacro
-@macro('deploy_localrepo_pack', ['on' => 'local'])
-    {{--deploy_localrepo_pack--}}
-    show_env
-    init_basedir_local
-    fetch_repo_localrepo
-    copy_env_localrepo
-    pack_deps_local
-    chdir_localrepo
-    deps_extract_localrepo
-    copy_custom_extra_localrepo
-    artisan_optimize_localrepo
-    pack_release_localrepo
-    init_basedir_remote
-    scp_release_to_remote
-    extract_release_on_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    cleanup_tempfiles_local
-    cleanup_tempfiles_remote
-    notice_done
-@endmacro
-@macro('deploy_remote_install', ['on' => 'web'])
-    {{--deploy_remote_install--}}
-    show_env
-    init_basedir_remote
-    fetch_repo_remote
-    sync_shared
-    update_permissions
-    envfile_link
-    chdir_release
-    deps_install_remote
-    copy_custom_extra_remote
-    artisan_optimize_remote
-    database_migrate
-    link_newrelease
-    cleanup_oldreleases
-    notice_done
-@endmacro
-@macro('deploy_init', ['on' => 'local'])
+
+@macro('deploy_init')
     init_basedir_local
     init_basedir_remote
-    scp_env_to_remote
+    rcp_env_all_to_remote
     link_env_on_remote
 @endmacro
-@macro('rollback')
-    {{--database_migrate_public_rollback--}}
-    link_rollback
+
+@macro('deploy')
+    {{ $deploy_macro_context }}
 @endmacro
-@task('showcmdlist',['on' => 'local'])
-    echo '----';
-    echo 'deploy';
-    echo 'manscprelease';
-    echo 'mandeployrelease';
-    echo 'deploy_mix_pack';
-    echo 'deploy_localrepo_install';
-    echo 'deploy_remote_install';
-    echo 'deploy_init';
-    echo 'rollback';
+
+@macro('rollback')
+    rollback_version
+@endmacro
+
+@macro('deploy_remotepack')
+    show_env_remote
+    init_basedir_local
+    init_basedir_remote
+    rcp_env_to_remote
+    updaterepo_remotesrc
+    envsetup_remotesrc
+    depsinstall_remotesrc
+    extracustomoverwrite_remotesrc
+    runtimeoptimize_remotesrc
+    syncshareddata_remotesrc
+    prepare_remoterelease
+    baseenvlink_remoterelease
+    depsreinstall_remoterelease
+    syncreleasetoapp_version
+    databasemigrate_version
+    customtask_on_deploy
+    cleanupoldreleases_on_remote
+    cleanup_tempfiles_local
+    cleanup_tempfiles_remote
+@endmacro
+
+@macro('deploy_localpack')
+    show_env_remote
+    init_basedir_local
+    init_basedir_remote
+    rcp_env_to_remote
+    updaterepo_localsrc
+    envsetup_localsrc
+    depsinstall_localsrc
+    extracustomoverwrite_localsrc
+    runtimeoptimize_localsrc
+    packrelease_localsrc
+    rcpreleasepack_to_remote
+    extractreleasepack_on_remote
+    syncshareddata_remotesrc
+    prepare_remoterelease
+    baseenvlink_remoterelease
+    depsreinstall_remoterelease
+    syncreleasetoapp_version
+    databasemigrate_version
+    customtask_on_deploy
+    cleanupoldreleases_on_remote
+    cleanup_tempfiles_local
+    cleanup_tempfiles_remote
+@endmacro
+
+@macro('pack_remotepack')
+    show_env_remote
+    init_basedir_remote
+    updaterepo_remotesrc
+    envsetup_remotesrc
+    depsinstall_remotesrc
+    extracustomoverwrite_remotesrc
+    runtimeoptimize_remotesrc
+@endmacro
+
+@macro('pack_localpack')
+    show_env_local
+    init_basedir_local
+    updaterepo_localsrc
+    envsetup_localsrc
+    depsinstall_localsrc
+    extracustomoverwrite_localsrc
+    runtimeoptimize_localsrc
+    packrelease_localsrc
+@endmacro
+
+@macro('rcp_localpack')
+    rcpreleasepack_to_remote
+@endmacro
+
+@macro('extract_localpack')
+    extractreleasepack_on_remote
+@endmacro
+
+@macro('mandeploy_remotesrc')
+    syncshareddata_remotesrc
+    prepare_remoterelease
+    baseenvlink_remoterelease
+    depsreinstall_remoterelease
+    syncreleasetoapp_version
+    databasemigrate_version
+    customtask_on_deploy
+    cleanupoldreleases_on_remote
+    cleanup_tempfiles_local
+    cleanup_tempfiles_remote
+@endmacro
+
+@macro('dbrollback')
+    databasemigraterollback_version
+@endmacro
+
+@macro('appbackup')
+    backupapp_version
+@endmacro
+
+@macro('databackup')
+    backupshareddata_version
+@endmacro
+
+@task('show_cmd_list',['on' => 'local'])
+    echo '================';
+    echo '---- [common task] ----';
+    echo 'show_cmd_list';
     echo 'show_env';
-    echo '----';
+    echo 'deploy_init';
+    echo 'deploy';
+    echo 'rollback';
+    echo '---- [spec task] ----';
+    echo 'deploy_remotepack';
+    echo 'deploy_localpack';
+    echo 'pack_remotepack';
+    echo 'pack_localpack';
+    echo 'rcp_localpack';
+    echo 'extract_localpack';
+    echo 'mandeploy_remotesrc';
+    echo '---- [addon task] ----';
+    echo 'dbrollback';
+    echo 'appbackup';
+    echo 'databackup';
+    echo '================';
 @endtask
-@task('show_env',['on' => 'web'])
-    echo '...';
+
+@task('show_env_local',['on' => 'local'])
+    echo '...[execute at local]';
     echo 'Current Release Name: {{$release}}';
     echo 'Current environment is {{$env}}';
     echo 'Current branch is {{$branch}}';
+    echo 'Current pack mode is {{$pack_mode}}';
+    echo 'Current deploy mode is {{$deploy_mode}}';
     echo 'Deployment Start at {{$dateDisplay}}';
     echo '----';
 @endtask
-@task('init_basedir_remote',['on' => 'web'])
-    [ -d {{ $release_dir }} ] || mkdir -p {{ $release_dir }};
-    [ -d {{ $shared_dir }} ] || mkdir -p {{ $shared_dir }};
-    [ -d {{ $shared_dir }}/storage ] || mkdir -p {{ $shared_dir }}/storage;
-    [ -d {{ $app_base }}/tmp ] || mkdir -p {{ $app_base }}/tmp;
+
+@task('show_env_remote',['on' => 'service'])
+    echo '...[execute at remote]';
+    echo 'Current Release Name: {{$release}}';
+    echo 'Current environment is {{$env}}';
+    echo 'Current pack mode is {{$pack_mode}}';
+    echo 'Current branch is {{$branch}}';
+    echo 'Current deploy mode is {{$deploy_mode}}';
+    echo 'Deployment Start at {{$dateDisplay}}';
+    echo '----';
 @endtask
+
 @task('init_basedir_local',['on' => 'local'])
-    [ -d {{ $local_envoydeploy_base }} ] || mkdir -p {{ $local_envoydeploy_base }};
-    [ -d {{ $local_envoydeploy_base }}/deps ] || mkdir -p {{ $local_envoydeploy_base }}/deps;
-    [ -d {{ $local_envoydeploy_base }}/releases ] || mkdir -p {{ $local_envoydeploy_base }}/releases;
+    [ -d {{ $localdeploy_base }} ] || mkdir -p {{ $localdeploy_base }};
+    {{--[ -d {{ $localdeploy_source_dir }} ] || mkdir -p {{ $localdeploy_source_dir }};--}}
+    [ -d {{ $localdeploy_tmp_dir }} ] || mkdir -p {{ $localdeploy_tmp_dir }};
 @endtask
-@task('scp_env_to_remote',['on' => 'local'])
-    echo "scp env to remote...";
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $local_dir }}/.env.{{ $env }} {{ $ssh }}:{{ $app_base }}/.env.{{ $env }};
-    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $ssh }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
-    echo "scp env to remote Done.";
+
+@task('init_basedir_remote',['on' => 'service'])
+    {{--[ -d {{ $source_dir }} ] || mkdir -p {{ $source_dir }};--}}
+    [ -d {{ $release_dir }} ] || mkdir -p {{ $release_dir }};
+    [ -d {{ $version_dir }} ] || mkdir -p {{ $version_dir }};
+    [ -d {{ $shared_dir }} ] || mkdir -p {{ $shared_dir }};
+    [ -d {{ $tmp_dir }} ] || mkdir -p {{ $tmp_dir }};
+
+    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    for subdirname in ${shareddirs[@]};
+    do
+        [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
+    done
 @endtask
-@task('link_env_on_remote',['on' => 'web'])
+@task('updatesharedpermissions_on_remote',['on' => 'service'])
+    echo "update shared path permissions...";
+    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    for subdirname in ${shareddirs[@]};
+    do
+        [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
+        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
+    done
+    echo "update shared path permissions Done.";
+@endtask
+@task('rcp_env_to_remote',['on' => 'local'])
+    echo "rcp env file to remote...";
+    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.{{ $env }} {{ $connection_string }}:{{ $app_base }}/.env.{{ $env }};
+    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $connection_string }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    echo "rcp env file to remote Done.";
+@endtask
+
+@task('rcp_env_all_to_remote',['on' => 'local'])
+    echo "rcp env all files to remote...";
+    [ -f {{ $local_dir }}/.env.development ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.development {{ $connection_string }}:{{ $app_base }}/.env.development;
+    [ -f {{ $local_dir }}/.env.local ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.local {{ $connection_string }}:{{ $app_base }}/.env.local;
+    [ -f {{ $local_dir }}/.env.production ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.production {{ $connection_string }}:{{ $app_base }}/.env.production;
+    [ -f {{ $local_dir }}/.env.testing ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.testing {{ $connection_string }}:{{ $app_base }}/.env.testing;
+    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.{{ $env }} {{ $connection_string }}:{{ $app_base }}/.env.{{ $env }};
+
+    [ -f {{ $local_dir }}/envoy.config.development.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.development.php {{ $connection_string }}:{{ $app_base }}/envoy.config.development.php;
+    [ -f {{ $local_dir }}/envoy.config.local.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.local.php {{ $connection_string }}:{{ $app_base }}/envoy.config.local.php;
+    [ -f {{ $local_dir }}/envoy.config.production.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.production.php {{ $connection_string }}:{{ $app_base }}/envoy.config.production.php;
+    [ -f {{ $local_dir }}/envoy.config.testing.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.testing.php {{ $connection_string }}:{{ $app_base }}/envoy.config.testing.php;
+    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $connection_string }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    echo "rcp env all files to remote Done.";
+@endtask
+
+@task('link_env_on_remote',['on' => 'service'])
     echo "link env on remote...";
     [ -f {{ $app_base }}/.env.{{ $env }} ] && rm -rf {{ $app_base }}/.env;
     [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $app_base }}/.env;
-    [ -f {{ $app_base }}/.env.{{ $env }} ] && chgrp -h {{$serviceowner}} {{ $app_base }}/.env;
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && chgrp -h {{$service_owner}} {{ $app_base }}/.env;
 
     [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && rm -rf {{ $app_base }}/envoy.config.php;
     [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $app_base }}/envoy.config.php;
-    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && chgrp -h {{$serviceowner}} {{ $app_base }}/envoy.config.php;
+    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && chgrp -h {{$service_owner}} {{ $app_base }}/envoy.config.php;
     echo "link env on remote Done.";
 @endtask
-@task('fetch_repo_remote',['on' => 'web'])
-    echo "Repository cloning...";
-    cd {{ $release_dir }};
-    git clone {{ $repo }} --branch={{ $branch }} --depth=1 {{ $release }};
-    echo "Repository cloned.";
-@endtask
-@task('update_repo_local',['on' => 'local'])
-    echo "Repository update...";
+
+@task('updaterepo_workingcopy',['on' => 'local'])
+    echo "Workingcopy Repository update...";
     cd {{ $local_dir }};
     git fetch origin;
     git pull;
-    echo "Repository updated.";
+    echo "Workingcopy Repository updated.";
 @endtask
-@task('fetch_repo_local',['on' => 'local'])
-    echo "Repository pull...";
+@task('depsinstall_workingcopy',['on' => 'local'])
+    echo "Workingcopy Dependencies install...";
     cd {{ $local_dir }};
-    git fetch origin;
-    git checkout -B {{ $branch }} origin/{{ $branch }};
-    git pull;
-    echo "Repository pulled.";
+    if [ {{ intval($settings['deps_install_component']['composer']) }} -eq 1 ]; then
+        echo "Composer install...";
+        {{ $settings['deps_install_command']['composer'] }};
+        {{--php artisan clear-compiled --env={{ $env }};--}}
+        {{--php artisan optimize --env={{ $env }};--}}
+        echo "Composer installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['npm']) }} -eq 1 ]; then
+        echo "NPM install...";
+        {{ $settings['deps_install_command']['npm'] }};
+        echo "NPM installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['bower']) }} -eq 1 ]; then
+        echo "Bower install...";
+        {{ $settings['deps_install_command']['bower'] }};
+        echo "Bower installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['gulp']) }} -eq 1 ]; then
+        echo "gulp build...";
+        {{ $settings['deps_install_command']['gulp'] }};
+        echo "gulp built.";
+    fi
+    echo "Workingcopy Dependencies installed.";
 @endtask
-@task('fetch_repo_localrepo',['on' => 'local'])
-    echo "Repository cloning...";
-    echo {{ $local_envoydeploy_base }};
-    echo {{ $appname }};
-    cd {{ $local_envoydeploy_base }};
-    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }} ] && echo "exists previous repo clone,need to remove.";
-    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }} ] && rm -rf {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    git clone {{ $repo }} --branch={{ $branch }} --depth=1 {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    echo "Repository cloned.";
-@endtask
-@task('copy_env_localrepo',['on' => 'local'])
-    echo "Repo Environment file setup";
-    [ -f {{ $local_dir }}/.env.development ] && cp -af {{ $local_dir }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.development {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    [ -f {{ $local_dir }}/.env ] && cp -af {{ $local_dir }}/.env {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -af {{ $local_dir }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    [ -f {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} ] && cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env.{{ $env }} {{ $local_envoydeploy_base }}/releases/{{ $appname }}/.env;
-    echo "Repo Environment file setup done";
-@endtask
-@task('sync_shared',['on' => 'web'])
-    {{--#cp -af {{ $release_dir }}/{{ $release }}/storage/* {{ $shared_dir }}/storage/;--}}
-    rsync --progress -e ssh -avzh --delay-updates --exclude "*.logs" {{ $release_dir }}/{{ $release }}/storage/ {{ $shared_dir }}/storage/;
-    rm -rf {{ $release_dir }}/{{ $release }}/storage;
-    ln -nfs {{ $shared_dir }}/storage {{ $release_dir }}/{{ $release }}/storage;
-    echo "New Release Shared directory setup";
-@endtask
-@task('update_permissions',['on' => 'web'])
-    cd {{ $release_dir }};
-    chgrp -R {{$serviceowner}} {{ $release }} {{ $shared_dir }}/storage;
-    chmod -R ug+rwx {{ $release }} {{ $shared_dir }}/storage;
-@endtask
-@task('envfile_link',['on' => 'web'])
-    [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
-    ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
-    chgrp -h {{$serviceowner}} {{ $release_dir }}/{{ $release }}/.env;
 
-    [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && rm -rf {{ $release_dir }}/{{ $release }}/envoy.config.php;
-    ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
-    chgrp -h {{$serviceowner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
-    echo "Environment file symbolic link setup";
-@endtask
-@task('chdir_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    echo "Change directory to {{ $local_envoydeploy_base }}/releases/{{ $appname }}";
-@endtask
-@task('chdir_release',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    echo "Change directory to {{ $release_dir }}/{{ $release }}";
-@endtask
-@task('deps_install_remote',['on' => 'web'])
-    echo "Dependencies install...";
-    cd {{ $release_dir }}/{{ $release }};
-    composer install --prefer-dist --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    npm install;
-    bower install;
-    echo "Dependencies installed.";
-@endtask
-@task('deps_install_local',['on' => 'local'])
-    echo "Dependencies install...";
-    cd {{ $local_dir }};
-    composer install --prefer-dist --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    npm install;
-    bower install;
-    echo "Dependencies installed.";
-@endtask
-@task('deps_install_localrepo',['on' => 'local'])
-    echo "Dependencies install...";
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    composer install --prefer-dist --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    {{--npm install;--}}
-    {{--bower install;--}}
-    echo "Dependencies installed.";
-@endtask
-@task('deps_extract_localrepo',['on' => 'local'])
-    echo "Dependencies extract...";
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    {{--composer install --prefer-dist --no-scripts --no-interaction;--}}
-    tar zxf {{ $local_envoydeploy_base }}/deps/deps.tgz
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    {{--npm install;--}}
-    {{--bower install;--}}
-    echo "Dependencies extracted.";
-@endtask
-@task('deps_update_remote',['on' => 'web'])
-    echo "Dependencies update...";
-    cd {{ $release_dir }}/{{ $release }};
-    composer update -vv --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    npm update;
-    bower update;
-    echo "Dependencies updated.";
-@endtask
-@task('deps_update_local',['on' => 'local'])
-    echo "Dependencies update...";
-    cd {{ $local_dir }};
-    composer update -vv --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    npm update;
-    bower update;
-    echo "Dependencies updated.";
-@endtask
-@task('deps_update_localrepo',['on' => 'local'])
-    echo "Dependencies update...";
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    composer update -vv --no-scripts --no-interaction;
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    npm update;
-    bower update;
-    echo "Dependencies updated.";
-@endtask
-@task('copy_custom_extra_remote',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    if [ -d {{ $release_dir }}/{{ $release }}/extra/custom ]; then
-        cp -af {{ $release_dir }}/{{ $release }}/extra/custom/* {{ $release_dir }}/{{ $release }}/;
-    fi
-@endtask
-@task('copy_custom_extra_local',['on' => 'local'])
-    cd {{ $local_dir }};
-    if [ -d {{ $local_dir }}/extra/custom ]; then
-        cp -af {{ $local_dir }}/extra/custom/* {{ $local_dir }}/;
-    fi
-@endtask
-@task('copy_custom_extra_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    if [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/extra/custom ]; then
-        cp -af {{ $local_envoydeploy_base }}/releases/{{ $appname }}/extra/custom/* {{ $local_envoydeploy_base }}/releases/{{ $appname }}/;
-    fi
-@endtask
-@task('artisan_optimize_remote',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    php artisan config:cache;
-    php artisan route:cache;
-@endtask
-@task('artisan_optimize_local',['on' => 'local'])
-    cd {{ $local_dir }};
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    php artisan config:cache;
-    php artisan route:cache;
-@endtask
-@task('artisan_optimize_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    php artisan config:cache;
-    php artisan route:cache;
-@endtask
-@task('artisan_reset_local',['on' => 'local'])
-    cd {{ $local_dir }};
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    php artisan config:clear;
-    php artisan route:clear;
-    {{--php artisan cache:clear--}}
-@endtask
-@task('artisan_reset_localrepo',['on' => 'local'])
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    composer dump-autoload --optimize;
-    php artisan clear-compiled --env={{ $env }};
-    php artisan optimize --env={{ $env }};
-    php artisan config:clear;
-    php artisan route:clear;
-    php artisan cache:clear;
-@endtask
-@task('pack_deps_local',['on' => 'local'])
-    echo "pack deps...";
-    [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
-    cd {{ $local_dir }};
-    [ -d {{ $local_dir }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
-    [ ! -d {{ $local_dir }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor;
-    echo "pack deps Done.";
-@endtask
-@task('pack_deps_localrepo',['on' => 'local'])
-    echo "pack deps...";
-    [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
-    cd {{ $local_envoydeploy_base }}/releases/{{ $appname }};
-    [ -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor node_modules;
-    [ ! -d {{ $local_envoydeploy_base }}/releases/{{ $appname }}/node_modules ] && tar czf {{ $local_envoydeploy_base }}/deps/deps.tgz vendor;
-    echo "pack deps Done.";
-@endtask
-@task('pack_release_localrepo',['on' => 'local'])
-    echo "pack release...";
-    [ -f {{ $local_envoydeploy_base }}/releases/release.tgz ] && rm -rf {{ $local_envoydeploy_base }}/releases/release.tgz;
-    cd {{ $local_envoydeploy_base }}/releases/;
-    tar czf {{ $local_envoydeploy_base }}/releases/release.tgz {{ $appname }};
-    echo "pack release Done.";
-@endtask
-@task('scp_deps_to_remote',['on' => 'local'])
-    echo "scp deps to remote...";
-    [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && scp {{ $local_envoydeploy_base }}/deps/deps.tgz {{ $ssh }}:{{ $app_base }}/tmp/deps.tgz;
-    echo "scp deps to remote Done.";
-@endtask
-@task('scp_release_to_remote',['on' => 'local'])
-    echo "scp release to remote...";
-    [ -f {{ $local_envoydeploy_base }}/releases/release.tgz ] && scp {{ $local_envoydeploy_base }}/releases/release.tgz {{ $ssh }}:{{ $app_base }}/tmp/release.tgz;
-    echo "scp release to remote Done.";
-@endtask
-@task('extract_deps_on_remote',['on' => 'web'])
-    echo "extract deps on remote...";
-    [ -f {{ $app_base }}/tmp/deps.tgz ] && tar zxf {{ $app_base }}/tmp/deps.tgz -C {{ $release_dir }}/{{ $release }};
-    echo "extract deps on remote Done.";
-@endtask
-@task('extract_release_on_remote',['on' => 'web'])
-    echo "extract release on remote...";
-    [ -d {{ $app_base }}/tmp/{{ $appname }} ] && rm -rf {{ $app_base }}/tmp/{{ $appname }};
-    [ -f {{ $app_base }}/tmp/release.tgz ] && tar zxf {{ $app_base }}/tmp/release.tgz -C {{ $app_base }}/tmp;
-    [ -d {{ $release_dir }}/{{ $release }} ] && rm -rf {{ $release_dir }}/{{ $release }};
-    mv {{ $app_base }}/tmp/{{ $appname }} {{ $release_dir }}/{{ $release }};
-    echo "extract release on remote Done.";
-@endtask
-@task('artisan_keygen',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan key:generate;
-@endtask
-@task('artisan_down',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan down;
-@endtask
-@task('artisan_up',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan up;
-@endtask
-@task('database_migrate',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan migrate --env={{ $env }} --force --no-interaction;
-@endtask
-@task('database_migrate_rollback',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
-@endtask
-@task('database_migrate_public_rollback',['on' => 'web'])
-    cd {{ $app_dir }};
-    php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
-@endtask
-@task('database_migrate_seed',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan migrate --seed --env={{ $env }} --force --no-interaction;
-@endtask
-@task('database_migrate_refresh',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan migrate:refresh --env={{ $env }} --force --no-interaction;
-@endtask
-@task('database_migrate_refresh_seed',['on' => 'web'])
-    cd {{ $release_dir }}/{{ $release }};
-    php artisan migrate:refresh --seed --env={{ $env }} --force --no-interaction;
-@endtask
-@task('link_newrelease',['on' => 'web'])
-    echo "Deploy new Release link";
-    cd {{ $app_base }};
-    [ -d {{ $prev_dir }} ] && unlink {{ $prev_dir }};
-    [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $prev_dir }};
-    ln -nfs {{ $release_dir }}/{{ $release }} {{ $app_dir }};
-    chgrp -h {{$serviceowner}} {{ $app_dir }};
-    echo "Deployment ({{ $release }}) symbolic link created";
-@endtask
-@task('link_prevrelease',['on' => 'web'])
-    cd {{ $app_base }};
-    if [ ! -d {{ $prev_dir }} ]; then
-        echo "noprevious link to rollback";
+@task('updaterepo_localsrc',['on' => 'local'])
+    echo "LocalSource Repository update...";
+    if [ -d {{ $localdeploy_source_dir }} ]; then
+        echo "Repository exits only update...";
+        cd {{ $localdeploy_source_dir }};
+        git fetch origin;
+        git checkout -B {{ $branch }} origin/{{ $branch }};
+        git pull origin {{ $branch }};
     else
-        [ ! -d {{ $app_dir }} ] || mv {{ $app_dir }} {{ $last_dir }};
-        [ ! -d {{ $prev_dir }} ] || mv {{ $prev_dir }} {{ $app_dir }};
+        echo "No Previous Repository exits and cloning...";
+        git clone {{ $source_repo }} --branch={{ $branch }} --depth=1 {{ $localdeploy_source_dir }};
     fi
-    echo "Rollback to previous symbolic link";
+    echo "LocalSource Repository updated.";
 @endtask
-@task('link_lastrelease',['on' => 'web'])
-    cd {{ $app_base }};
-    if [ ! -d {{ $last_dir }} ]; then
-        echo "nolast link to symbolic link";
-    else
-        [ ! -d {{ $app_dir }} ] || mv {{ $app_dir }} {{ $prev_dir }};
-        [ ! -d {{ $last_dir }} ] || mv {{ $last_dir }} {{ $app_dir }};
+
+@task('envsetup_localsrc',['on' => 'local'])
+    echo "LocalSource Repository Environment file setup";
+    [ -f {{ $local_dir }}/.env.{{ $env }} ] && cp -RLpf {{ $local_dir }}/.env.{{ $env }} {{ $localdeploy_source_dir }}/.env;
+    [ -f {{ $localdeploy_source_dir }}/.env.{{ $env }} ] && cp -RLpf {{ $localdeploy_source_dir }}/.env.{{ $env }} {{ $localdeploy_source_dir }}//.env;
+    echo "LocalSource Repository Environment file setup done";
+@endtask
+@task('depsinstall_localsrc',['on' => 'local'])
+    echo "LocalSource Dependencies install...";
+    cd {{ $localdeploy_source_dir }};
+    if [ {{ intval($settings['deps_install_component']['composer']) }} -eq 1 ]; then
+        echo "Composer install...";
+        {{ $settings['deps_install_command']['composer'] }};
+        echo "Composer installed.";
     fi
-    echo "Reset to last symbolic link";
+    if [ {{ intval($settings['deps_install_component']['npm']) }} -eq 1 ]; then
+        echo "NPM install...";
+        {{ $settings['deps_install_command']['npm'] }};
+        echo "NPM installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['bower']) }} -eq 1 ]; then
+        echo "Bower install...";
+        {{ $settings['deps_install_command']['bower'] }};
+        echo "Bower installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['gulp']) }} -eq 1 ]; then
+        echo "gulp build...";
+        {{ $settings['deps_install_command']['gulp'] }};
+        echo "gulp built.";
+    fi
+    echo "LocalSource Dependencies installed.";
 @endtask
-@task('link_rollback',['on' => 'web'])
-    cd {{ $app_base }};
-    if [ -d {{ $last_dir }} ]; then
-        [ ! -d {{ $app_dir }} ] || mv {{ $app_dir }} {{ $prev_dir }};
-        [ ! -d {{ $last_dir }} ] || mv {{ $last_dir }} {{ $app_dir }};
-        echo "Reset to last symbolic link";
-    elif [ -d {{ $prev_dir }} ] && [ ! -d {{ $last_dir }} ]; then
-        [ ! -d {{ $app_dir }} ] || mv {{ $app_dir }} {{ $last_dir }};
-        [ ! -d {{ $prev_dir }} ] || mv {{ $prev_dir }} {{ $app_dir }};
-        echo "Rollback to previous symbolic link";
+
+@task('extracustomoverwrite_localsrc',['on' => 'local'])
+    if [ {{ intval($settings['extracustomoverwrite_enable']) }} -eq 1 ]; then
+        echo "LocalSource Extra custom files overwriting...";
+        cd {{ $localdeploy_source_dir }};
+        if [ -d {{ $localdeploy_source_dir }}/extra/custom ]; then
+            cp -af {{ $localdeploy_source_dir }}/extra/custom/* {{ $localdeploy_source_dir }}/;
+        fi
+        echo "LocalSource Extra custom files overwrote.";
+    fi
+@endtask
+@task('runtimeoptimize_localsrc',['on' => 'local'])
+    echo "LocalSource Runtime optimize...";
+    cd {{ $localdeploy_source_dir }};
+    if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
+        echo "Composer optimize...";
+        {{ $settings['runtime_optimize_command']['composer'] }};
+        echo "Composer optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['optimize']) }} -eq 1 ]; then
+        echo "artisan optimize...";
+        {{ $settings['runtime_optimize_command']['artisan']['optimize'] }};
+        echo "artisan optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['config_cache']) }} -eq 1 ]; then
+        echo "artisan config:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['config_cache'] }};
+        echo "artisan config:cache done.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['route_cache']) }} -eq 1 ]; then
+        echo "artisan route:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['route_cache'] }};
+        echo "artisan route:cache done.";
+    fi
+    echo "LocalSource Runtime optimized.";
+@endtask
+@task('packrelease_localsrc',['on' => 'local'])
+    echo "LocalSource Pack release...";
+    [ -f {{ $localdeploy_tmp_dir }}/release.tgz ] && rm -rf {{ $localdeploy_tmp_dir }}/release.tgz;
+    cd {{ $localdeploy_base }}/;
+    tar czf {{ $localdeploy_tmp_dir }}/release.tgz {{ $source_name }};
+    echo "LocalSource Pack release Done.";
+@endtask
+@task('rcpreleasepack_to_remote',['on' => 'local'])
+    echo "rcp localpack release to remote...";
+    if [ -f {{ $localdeploy_tmp_dir }}/release.tgz ]; then
+        rsync -avz --progress {{ $port_parameter_rsync }} {{ $localdeploy_tmp_dir }}/release.tgz {{ $connection_string }}:{{ $tmp_dir }}/;
     else
-        echo "noprevious link to rollback";
+        echo "localpack release NOT EXISTS.";
+        exit;
+    fi
+    echo "rcp localpack release to remote Done.";
+@endtask
+
+@task('extractreleasepack_on_remote',['on' => 'service'])
+    echo "extract pack release on remote...";
+    if [ -f {{ $tmp_dir }}/release.tgz ]; then
+        [ -d {{ $tmp_dir }}/{{ $source_name }} ] && rm -rf {{ $tmp_dir }}/{{ $source_name }};
+        tar zxf {{ $tmp_dir }}/release.tgz -C {{ $tmp_dir }};
+        if [ -d {{ $tmp_dir }}/{{ $source_name }} ]; then
+            if [ -d {{ $source_dir }} ]; then
+                echo "Previous Remote Source Dir Exists,Moving.";
+                [ -d {{ $app_base }}/source_prev ] && rm -rf {{ $app_base }}/source_prev;
+                mv {{ $source_dir }} {{ $app_base }}/source_prev;
+                mv {{ $tmp_dir }}/{{ $source_name }} {{ $source_dir }};
+            else
+                mv {{ $tmp_dir }}/{{ $source_name }} {{ $source_dir }};
+            fi
+        else
+            echo "extract pack release on remote ERROR.";
+            exit;
+        fi
+    else
+        echo "pack release NOT EXISTS.";
+        exit;
+    fi
+    echo "extract pack release on remote Done.";
+@endtask
+
+@task('updaterepo_remotesrc',['on' => 'service'])
+    echo "RemoteSource Repository update...";
+    if [ -d {{ $source_dir }} ]; then
+        echo "Repository exits only update...";
+        cd {{ $source_dir }};
+        git fetch origin;
+        git checkout -B {{ $branch }} origin/{{ $branch }};
+        git pull origin {{ $branch }};
+    else
+        echo "No Previous Repository exits and cloning...";
+        git clone {{ $source_repo }} --branch={{ $branch }} --depth=1 {{ $source_dir }};
+    fi
+    echo "RemoteSource Repository updated.";
+@endtask
+
+@task('envsetup_remotesrc',['on' => 'service'])
+    echo "RemoteSource Repository Environment file setup";
+    [ -f {{ $source_dir }}/.env.{{ $env }} ] && cp -RLpf {{ $source_dir }}/.env.{{ $env }} {{ $source_dir }}/.env;
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && cp -RLpf {{ $app_base }}/.env.{{ $env }} {{ $source_dir }}//.env;
+    echo "RemoteSource Repository Environment file setup done";
+@endtask
+
+@task('depsinstall_remotesrc',['on' => 'service'])
+    echo "RemoteSource Dependencies install...";
+    cd {{ $source_dir }};
+    if [ {{ intval($settings['deps_install_component']['composer']) }} -eq 1 ]; then
+        echo "Composer install...";
+        {{ $settings['deps_install_command']['composer'] }};
+        echo "Composer installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['npm']) }} -eq 1 ]; then
+        echo "NPM install...";
+        {{ $settings['deps_install_command']['npm'] }};
+        echo "NPM installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['bower']) }} -eq 1 ]; then
+        echo "Bower install...";
+        {{ $settings['deps_install_command']['bower'] }};
+        echo "Bower installed.";
+    fi
+    if [ {{ intval($settings['deps_install_component']['gulp']) }} -eq 1 ]; then
+        echo "gulp build...";
+        {{ $settings['deps_install_command']['gulp'] }};
+        echo "gulp built.";
+    fi
+    echo "RemoteSource Dependencies installed.";
+@endtask
+
+@task('extracustomoverwrite_remotesrc',['on' => 'service'])
+    if [ {{ intval($settings['extracustomoverwrite_enable']) }} -eq 1 ]; then
+        echo "RemoteSource Extra custom files overwriting...";
+        cd {{ $source_dir }};
+        if [ -d {{ $source_dir }}/extra/custom ]; then
+            cp -af {{ $source_dir }}/extra/custom/* {{ $source_dir }}/;
+        fi
+        echo "RemoteSource Extra custom files overwrote.";
     fi
 @endtask
 
-@task('cleanup_oldreleases',['on' => 'web'])
+@task('runtimeoptimize_remotesrc',['on' => 'service'])
+    echo "RemoteSource Runtime optimize...";
+    cd {{ $source_dir }};
+    if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
+        echo "Composer optimize...";
+        {{ $settings['runtime_optimize_command']['composer'] }};
+        echo "Composer optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['optimize']) }} -eq 1 ]; then
+        echo "artisan optimize...";
+        {{ $settings['runtime_optimize_command']['artisan']['optimize'] }};
+        echo "artisan optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['config_cache']) }} -eq 1 ]; then
+        echo "artisan config:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['config_cache'] }};
+        echo "artisan config:cache done.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['route_cache']) }} -eq 1 ]; then
+        echo "artisan route:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['route_cache'] }};
+        echo "artisan route:cache done.";
+    fi
+    echo "RemoteSource Runtime optimized.";
+@endtask
+
+@task('syncshareddata_remotesrc',['on' => 'service'])
+    echo "RemoteSource Sync SharedData...";
+    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    for subdirname in ${shareddirs[@]};
+    do
+        [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
+        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
+        rsync --progress -e ssh -avzh --delay-updates --exclude "*.logs" {{ $source_dir }}/${subdirname}/ {{ $shared_dir }}/${subdirname}/;
+        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
+    done
+    echo "RemoteSource Sync SharedData Done.";
+@endtask
+
+@task('prepare_remoterelease',['on' => 'service'])
+    echo "RemoteRelease Prepare...";
+    rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $source_dir }}/ {{ $release_dir }}/{{ $release }}/;
+
+    for subdirname in ${shareddirs[@]};
+    do
+        if [ -e {{ $release_dir }}/{{ $release }}/${subdirname} ]; then
+            if [ ! -L {{ $release_dir }}/{{ $release }}/${subdirname} ]; then
+                mkdir -p {{ $release_dir }}/{{ $release }}/${subdirname};
+                rm -rf {{ $release_dir }}/{{ $release }}/${subdirname};
+                ln -nfs {{ $shared_dir }}/${subdirname} {{ $release_dir }}/{{ $release }}/${subdirname};
+            fi
+        else
+            mkdir -p {{ $release_dir }}/{{ $release }}/${subdirname};
+            rm -rf {{ $release_dir }}/{{ $release }}/${subdirname};
+            ln -nfs {{ $shared_dir }}/${subdirname} {{ $release_dir }}/{{ $release }}/${subdirname};
+        fi
+        chgrp -R {{$service_owner}} {{ $release_dir }}/{{ $release }}/${subdirname};
+        chmod -R ug+rwx {{ $release_dir }}/{{ $release }}/${subdirname};
+    done
+    echo "RemoteRelease Prepare Done.";
+@endtask
+
+@task('baseenvlink_remoterelease',['on' => 'service'])
+    echo "RemoteRelease Environment file setup...";
+    if [ {{ intval($settings['use_appbase_envfile']) }} -eq 1 ]; then
+        [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
+        [ -f {{ $app_base }}/.env ] && ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
+        [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $release_dir }}/{{ $release }}/.env;
+        [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+
+        [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && rm -rf {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        [ -f {{ $app_base }}/envoy.config.php ] && ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+    else
+        if [ ! -f {{ $release_dir }}/{{ $release }}/.env ]; then
+            [ -f {{ $app_base }}/.env ] && ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
+            [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $release_dir }}/{{ $release }}/.env;
+            [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+        else
+            chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+        fi
+        if [ ! -f {{ $release_dir }}/{{ $release }}/envoy.config.php ]; then
+            [ -f {{ $app_base }}/envoy.config.php ] && ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
+            [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
+            [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        else
+            chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        fi
+    fi
+    echo "RemoteRelease Environment file setup Done.";
+@endtask
+@task('depsreinstall_remoterelease',['on' => 'service'])
+    if [ {{ intval($settings['deps_reinstall_on_remote_release']) }} -eq 1 ]; then
+        echo "RemoteRelease Dependencies reinstall...";
+        cd {{ $release_dir }}/{{ $release }};
+        if [ {{ intval($settings['deps_install_component']['composer']) }} -eq 1 ]; then
+            echo "Composer install...";
+            {{ $settings['deps_install_command']['composer'] }};
+            echo "Composer installed.";
+        fi
+        if [ {{ intval($settings['deps_install_component']['npm']) }} -eq 1 ]; then
+            echo "NPM install...";
+            {{ $settings['deps_install_command']['npm'] }};
+            echo "NPM installed.";
+        fi
+        if [ {{ intval($settings['deps_install_component']['bower']) }} -eq 1 ]; then
+            echo "Bower install...";
+            {{ $settings['deps_install_command']['bower'] }};
+            echo "Bower installed.";
+        fi
+        if [ {{ intval($settings['deps_install_component']['gulp']) }} -eq 1 ]; then
+            echo "gulp build...";
+            {{ $settings['deps_install_command']['gulp'] }};
+            echo "gulp built.";
+        fi
+
+        if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
+            echo "Composer optimize...";
+            {{ $settings['runtime_optimize_command']['composer'] }};
+            echo "Composer optimized.";
+        fi
+        if [ {{ intval($settings['runtime_optimize_component']['artisan']['optimize']) }} -eq 1 ]; then
+            echo "artisan optimize...";
+            {{ $settings['runtime_optimize_command']['artisan']['optimize'] }};
+            echo "artisan optimized.";
+        fi
+        if [ {{ intval($settings['runtime_optimize_component']['artisan']['config_cache']) }} -eq 1 ]; then
+            echo "artisan config:cache...";
+            {{ $settings['runtime_optimize_command']['artisan']['config_cache'] }};
+            echo "artisan config:cache done.";
+        fi
+        if [ {{ intval($settings['runtime_optimize_component']['artisan']['route_cache']) }} -eq 1 ]; then
+            echo "artisan route:cache...";
+            {{ $settings['runtime_optimize_command']['artisan']['route_cache'] }};
+            echo "artisan route:cache done.";
+        fi
+        echo "RemoteRelease Dependencies reinstall Done.";
+    fi
+@endtask
+
+@task('syncreleasetoapp_version',['on' => 'service'])
+    echo "RemoteVersion Sync Release to App...";
+    if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
+        {{-- incr mode--}}
+        [ -L {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
+        if [ -e {{ $app_dir }} ]; then
+            {{-- prev appdir exists --}}
+            {{--create incr mode prev backup--}}
+            rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
+            for subdirname in ${shareddirs[@]};
+            do
+                if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                    if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                        mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                    fi
+                else
+                    mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                    rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                    ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                fi
+                chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
+            done
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                mv {{ $app_dir }} {{ $releaseprev_dir_link }};
+            fi
+        fi
+        rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $release_dir }}/{{ $release }}/ {{ $app_dir }}/;
+        for subdirname in ${shareddirs[@]};
+        do
+            if [ -e {{ $app_dir }}/${subdirname} ]; then
+                if [ ! -L {{ $app_dir }}/${subdirname} ]; then
+                    mkdir -p {{ $app_dir }}/${subdirname};
+                    rm -rf {{ $app_dir }}/${subdirname};
+                    ln -nfs {{ $shared_dir }}/${subdirname} {{ $app_dir }}/${subdirname};
+                fi
+            else
+                mkdir -p {{ $app_dir }}/${subdirname};
+                rm -rf {{ $app_dir }}/${subdirname};
+                ln -nfs {{ $shared_dir }}/${subdirname} {{ $app_dir }}/${subdirname};
+            fi
+            chgrp -R {{$service_owner}} {{ $app_dir }}/${subdirname};
+            chmod -R ug+rwx {{ $app_dir }}/${subdirname};
+        done
+        if [ -e {{ $version_dir }}/release_name_current ]; then
+            lastreleasevalue=$(<{{ $version_dir }}/release_name_current)
+            ln -nfs {{ $release_dir }}/$lastreleasevalue {{ $releaseprev_dir_link }};
+            cp -af {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
+        fi
+        echo "{{ $release }}" > {{ $version_dir }}/release_name_current;
+        [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
+        [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+        ln -nfs {{ $release_dir }}/{{ $release }} {{ $releasecurrent_dir_link }};
+    else
+        {{-- link mode--}}
+        [ -L {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
+
+        if [ -e {{ $app_dir }} ]; then
+            {{-- prev appdir exists --}}
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                {{--create incr mode prev backup--}}
+                rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
+                for subdirname in ${shareddirs[@]};
+                do
+                    if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                        if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                            mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                            rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                            ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                        fi
+                    else
+                        mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                    fi
+                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
+                done
+                mv {{ $app_dir }} {{ $releaseprev_dir_link }};
+            else
+                [ -d {{ $releaseprev_dir_incr }} ] &&  rm -rf {{ $releaseprev_dir_incr }};
+                mv {{ $app_dir }} {{ $releaseprev_dir_incr }};
+            fi
+        fi
+        ln -nfs {{ $release_dir }}/{{ $release }} {{ $app_dir }};
+        if [ -e {{ $version_dir }}/release_name_current ]; then
+            lastreleasevalue=$(<{{ $version_dir }}/release_name_current)
+            ln -nfs {{ $release_dir }}/$lastreleasevalue {{ $releaseprev_dir_link }};
+            cp -af {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
+        fi
+        echo "{{ $release }}" > {{ $version_dir }}/release_name_current;
+        [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
+        [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+        ln -nfs {{ $release_dir }}/{{ $release }} {{ $releasecurrent_dir_link }};
+    fi
+    chgrp -h {{$service_owner}} {{ $app_dir }};
+    echo "RemoteVersion Sync Release to App Done.";
+@endtask
+
+@task('databasemigrate_version',['on' => 'service'])
+    if [ {{ intval($settings['databasemigrate_on_deploy']==1) }} -eq 1 ]; then
+        echo "RemoteVersion Release Database Migrate...";
+        cd {{ $app_dir }};
+        php artisan migrate --env={{ $env }} --force --no-interaction;
+        echo "RemoteVersion Release Database Migrate Done.";
+    fi
+@endtask
+
+@task('cleanupoldreleases_on_remote',['on' => 'service'])
     echo 'Cleanup up old releases';
     cd {{ $release_dir }};
-    {{--ls -1d release_* | head -n -3 | xargs -d '\n' rm -Rf;--}}
-    (ls -rd {{ $release_dir }}/*|head -n 4;ls -d {{ $release_dir }}/*)|sort|uniq -u|xargs rm -rf;
-    echo "Cleanup up done.";
-@endtask
-@task('cleanup_tempfiles_local',['on' => 'local'])
-    echo 'Cleanup up tempfiles';
-    cd {{ $local_envoydeploy_base }};
-    [ -f {{ $local_envoydeploy_base }}/deps/deps.tgz ] && rm -rf {{ $local_envoydeploy_base }}/deps/deps.tgz;
-    [ -f {{ $local_envoydeploy_base }}/releases/release.tgz ] && rm -rf {{ $local_envoydeploy_base }}/releases/release.tgz;
-    echo "Cleanup up done.";
-@endtask
-@task('cleanup_tempfiles_remote',['on' => 'web'])
-    echo 'Cleanup up tempfiles';
-    cd {{ $app_base }}/tmp;
-    [ -d {{ $app_base }}/tmp/{{ $appname }} ] && rm -rf {{ $app_base }}/tmp/{{ $appname }};
-    [ -f {{ $app_base }}/tmp/deps.tgz ] && rm -rf {{ $app_base }}/tmp/deps.tgz;
-    [ -f {{ $app_base }}/tmp/release.tgz ] && rm -rf {{ $app_base }}/tmp/release.tgz;
-    echo "Cleanup up done.";
-@endtask
-@task('notice_done',['on' => 'web'])
-    echo "Deployment ({{ $release }}) done.";
+    {{--ls -1d release_* | head -n -{{ intval($release_keep_count) }} | xargs -d '\n' rm -Rf;--}}
+    (ls -rd {{ $release_dir }}/*|head -n {{ intval($release_keep_count+1) }};ls -d {{ $release_dir }}/*)|sort|uniq -u|xargs rm -rf;
+    echo "Cleanup up old releases done.";
 @endtask
 
+@task('cleanup_tempfiles_local',['on' => 'local'])
+    echo 'Cleanup Local tempfiles';
+    [ -f {{ $localdeploy_tmp_dir }}/release.tgz ] && rm -rf {{ $localdeploy_tmp_dir }}/release.tgz;
+    echo "Cleanup Local tempfiles done.";
+@endtask
+@task('cleanup_tempfiles_remote',['on' => 'service'])
+    echo 'Cleanup Remote tempfiles';
+    [ -f {{ $tmp_dir }}/release.tgz ] && rm -rf {{ $tmp_dir }}/release.tgz;
+    [ -d {{ $app_base }}/source_prev ] && rm -rf {{ $app_base }}/source_prev;
+    echo "Cleanup Remote tempfiles done.";
+@endtask
+
+@task('rollback_version',['on' => 'service'])
+    echo "RemoteVersion Release Rollback...";
+    if [ {{ intval($settings['databasemigraterollback_on_rollback']==1) }} -eq 1 ]; then
+        echo "RemoteVersion Release Database Migrate Rollback...";
+        cd {{ $app_dir }};
+        php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
+        echo "RemoteVersion Release Database Migrate Rollback Done.";
+    fi
+    if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
+        {{-- incr mode--}}
+        if [ -d {{ $releaselast_dir_incr }} ]; then
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
+                for subdirname in ${shareddirs[@]};
+                do
+                    if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                        if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                            mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                            rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                            ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                        fi
+                    else
+                        mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                    fi
+                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
+                done
+                unlink {{ $app_dir }};
+            else
+                {{--prev appdir is incr mode--}}
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaseprev_dir_incr }};
+            fi
+            [ -d {{ $releaselast_dir_incr }} ] && mv {{ $releaselast_dir_incr }} {{ $app_dir }};
+
+            [ -d {{ $releasecurrent_dir_link }} ] && mv {{ $releasecurrent_dir_link }} {{ $releaseprev_dir_link }};
+            [ -d {{ $releaselast_dir_link }} ] && mv {{ $releaselast_dir_link }} {{ $releasecurrent_dir_link }};
+
+            [ -f {{ $version_dir }}/release_name_prev ] && rm -rf {{ $version_dir }}/release_name_prev;
+            [ -f {{ $version_dir }}/release_name_current ] && mv {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
+            [ -f {{ $version_dir }}/release_name_last ] && mv {{ $version_dir }}/release_name_last {{ $version_dir }}/release_name_current;
+
+            [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
+            [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+            echo "Reset to last release";
+        elif [ -d {{ $releaseprev_dir_incr }} ] && [ ! -d {{ $releaselast_dir_incr }} ]; then
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaselast_dir_incr }}/;
+                for subdirname in ${shareddirs[@]};
+                do
+                    if [ -e {{ $releaselast_dir_incr }}/${subdirname} ]; then
+                        if [ ! -L {{ $releaselast_dir_incr }}/${subdirname} ]; then
+                            mkdir -p {{ $releaselast_dir_incr }}/${subdirname};
+                            rm -rf {{ $releaselast_dir_incr }}/${subdirname};
+                            ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
+                        fi
+                    else
+                        mkdir -p {{ $releaselast_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaselast_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
+                    fi
+                    chgrp -R {{$service_owner}} {{ $releaselast_dir_incr }}/${subdirname};
+                    chmod -R ug+rwx {{ $releaselast_dir_incr }}/${subdirname};
+                done
+                unlink {{ $app_dir }};
+            else
+                {{--prev appdir is incr mode--}}
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaselast_dir_incr }};
+            fi
+            [ -d {{ $releaseprev_dir_incr }} ] && mv {{ $releaseprev_dir_incr }} {{ $app_dir }};
+
+            [ -d {{ $releasecurrent_dir_link }} ] && mv {{ $releasecurrent_dir_link }} {{ $releaselast_dir_link }};
+            [ -d {{ $releaseprev_dir_link }} ] && mv {{ $releaseprev_dir_link }} {{ $releasecurrent_dir_link }};
+
+            [ -f {{ $version_dir }}/release_name_last ] && rm -rf {{ $version_dir }}/release_name_last;
+            [ -f {{ $version_dir }}/release_name_current ] && mv {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_last;
+            [ -f {{ $version_dir }}/release_name_prev ] && mv {{ $version_dir }}/release_name_prev {{ $version_dir }}/release_name_current;
+
+            [ -d {{ $releaseprev_dir_incr }} ] && rm -rf {{ $releaseprev_dir_incr }};
+            [ -d {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
+            echo "Rollback to previous release";
+        else
+            echo "noprevious release to rollback";
+        fi
+    else
+        {{-- link mode--}}
+        if [ -d {{ $releaselast_dir_link }} ]; then
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
+                for subdirname in ${shareddirs[@]};
+                do
+                    if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                        if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
+                            mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                            rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                            ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                        fi
+                    else
+                        mkdir -p {{ $releaseprev_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
+                    fi
+                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
+                done
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaseprev_dir_link }};
+            else
+                {{--prev appdir is incr mode--}}
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaseprev_dir_incr }};
+                [ -d {{ $releasecurrent_dir_link }} ] && mv {{ $releasecurrent_dir_link }} {{ $releaseprev_dir_link }};
+            fi
+            [ -d {{ $releaselast_dir_link }} ] && mv {{ $releaselast_dir_link }} {{ $app_dir }};
+
+            [ -d {{ $releasecurrent_dir_link }} ] && unlink {{ $releasecurrent_dir_link }};
+            [ -d {{ $releaselast_dir_link }} ] && cp -af {{ $releaselast_dir_link }} {{ $releasecurrent_dir_link }};
+
+            [ -f {{ $version_dir }}/release_name_prev ] && rm -rf {{ $version_dir }}/release_name_prev;
+            [ -f {{ $version_dir }}/release_name_current ] && mv {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
+            [ -f {{ $version_dir }}/release_name_last ] && mv {{ $version_dir }}/release_name_last {{ $version_dir }}/release_name_current;
+
+            [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
+            [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+            echo "Reset to last symbolic link";
+        elif [ -d {{ $releaseprev_dir_link }} ] && [ ! -d {{ $releaselast_dir_link }} ]; then
+            if [ -L {{ $app_dir }} ]; then
+                {{--prev appdir is link mode--}}
+                rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaselast_dir_incr }}/;
+                for subdirname in ${shareddirs[@]};
+                do
+                    if [ -e {{ $releaselast_dir_incr }}/${subdirname} ]; then
+                        if [ ! -L {{ $releaselast_dir_incr }}/${subdirname} ]; then
+                            mkdir -p {{ $releaselast_dir_incr }}/${subdirname};
+                            rm -rf {{ $releaselast_dir_incr }}/${subdirname};
+                            ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
+                        fi
+                    else
+                        mkdir -p {{ $releaselast_dir_incr }}/${subdirname};
+                        rm -rf {{ $releaselast_dir_incr }}/${subdirname};
+                        ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
+                    fi
+                    chgrp -R {{$service_owner}} {{ $releaselast_dir_incr }}/${subdirname};
+                    chmod -R ug+rwx {{ $releaselast_dir_incr }}/${subdirname};
+                done
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaselast_dir_link }};
+            else
+                {{--prev appdir is incr mode--}}
+                [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaselast_dir_incr }};
+                [ -d {{ $releasecurrent_dir_link }} ] && mv {{ $releasecurrent_dir_link }} {{ $releaselast_dir_link }};
+            fi
+            [ -d {{ $releaseprev_dir_link }} ] && mv {{ $releaseprev_dir_link }} {{ $app_dir }};
+
+            [ -d {{ $releasecurrent_dir_link }} ] && unlink {{ $releasecurrent_dir_link }};
+            [ -d {{ $releaseprev_dir_link }} ] && cp -af {{ $releaseprev_dir_link }} {{ $releasecurrent_dir_link }};
+
+            [ -f {{ $version_dir }}/release_name_last ] && rm -rf {{ $version_dir }}/release_name_last;
+            [ -f {{ $version_dir }}/release_name_current ] && mv {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_last;
+            [ -f {{ $version_dir }}/release_name_prev ] && mv {{ $version_dir }}/release_name_prev {{ $version_dir }}/release_name_current;
+
+            [ -d {{ $releaseprev_dir_incr }} ] && rm -rf {{ $releaseprev_dir_incr }};
+            [ -d {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
+            echo "Rollback to previous symbolic link";
+        else
+            echo "noprevious link to rollback";
+        fi
+    fi
+    echo "RemoteVersion Release Rollback Done.";
+@endtask
+
+
+@task('databasemigraterollback_version',['on' => 'service'])
+    echo "RemoteVersion Release Database Migrate Rollback...";
+    cd {{ $app_dir }};
+    php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
+    echo "RemoteVersion Release Database Migrate Rollback Done.";
+@endtask
+
+@task('backupapp_version',['on' => 'service'])
+    echo "RemoteVersion Backup Current Version Release...";
+    cd {{ $app_base }}/;
+    tar czf {{ $tmp_dir }}/backup_release_files_tmp.tgz {{ $version_name }}/.;
+    [ -f {{ $tmp_dir }}/backup_release_files.tgz ] && rm -rf {{ $tmp_dir }}/backup_release_files.tgz;
+    mv {{ $tmp_dir }}/backup_release_files_tmp.tgz {{ $tmp_dir }}/backup_release_files.tgz;
+    echo "Backup Release File Created At: {{ $tmp_dir }}/backup_release_files.tgz";
+    echo "RemoteVersion Backup Current Version Release Done.";
+@endtask
+
+@task('backupshareddata_version',['on' => 'service'])
+    echo "RemoteVersion Backup Current Shared Data...";
+    cd {{ $app_base }}/;
+    tar czf {{ $tmp_dir }}/backup_shareddata_files_tmp.tgz shared;
+    [ -f {{ $tmp_dir }}/backup_shareddata_files.tgz ] && rm -rf {{ $tmp_dir }}/backup_shareddata_files.tgz;
+    mv {{ $tmp_dir }}/backup_shareddata_files_tmp.tgz {{ $tmp_dir }}/backup_shareddata_files.tgz;
+    echo "Backup SharedData File Created At: {{ $tmp_dir }}/backup_shareddata_files.tgz";
+    echo "RemoteVersion Backup Current Shared Data Done.";
+@endtask

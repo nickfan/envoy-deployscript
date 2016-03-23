@@ -33,11 +33,11 @@ Your must have Envoy installed using the Composer global command:
 
 1. Download or clone this repository
 
-2. then copy envoy.config.php and Envoy.blade.php to your laravel project root directory.(e.g ~/code/mysite)
+2. then copy envoy.config.example.php and Envoy.blade.php to your laravel project root directory.(e.g ~/code/mysite)
 
-3. then edit the envoy.config.php file with the ssh login, Git repository, server path for your app.
-The `$deploybasepath` (server base path) should already be created in your server with right permissions(e.g owner:www-data,read/write).
-You should set your website root directory (in vhost / server config) to `$deploybasepath/$appname`/current/public (e.g /var/www/mysite/current/public)
+3. then rename(or symbolic link) envoy.config.example.php to envoy.config.php and edit the envoy.config.php file with the ssh login info, Git repository, server path for your app.
+The `$deploy_basepath` (server base path) should already be created in your server with right permissions(e.g owner:www-data,read/write).
+You should set your website root directory (in vhost / server config) to `$deploy_basepath/$appname`/current/public (e.g /var/www/mysite/current/public)
 
 4. add `.envoydeploy/` directory to your .gitignore file in your laravel project root if you use git as your source control software.
 
@@ -59,7 +59,24 @@ and you could add the dot env settings file to your .gitignore file.
 
 >it's usually we use this for custom laravel-elixir config setting and other staff.
 
-### Init
+### Configuration
+
+You could tweak your **envoy.config.php** for your application situation.
+
+#### $pack_mode
+	
+> **local** : checkout code and prepare the app code package locally,then pack and rsync/scp packed files to remote and extract on remote (good for small vps but scp cost bandwidth)
+
+> **remote** : checkout code and prepare the app code package on remote server (fast for your server have good network connection)
+
+#### $deploy_mode
+
+> **incr** : sync new code to current running path (if you have lot of code and resource files in your project ,you may choose this mode)
+
+> **link** : link new release path to current running path (if you want light and quick code deployment, you may choose this mode)
+
+
+### Deploy-Init
 
 When you're happy with the config, run the init task on your local machine by running the following in the repository directory
 
@@ -83,27 +100,6 @@ You can specify the Laravel environment (for artisan:migrate command) and git br
 
 >envoy run deploy --branch=develop --env=development
 
-#### Working copy deploy
-
-if your remote server just have too small RAM to run `composer install` on your server (e.g some cheap VPS server instance)
-you could use `deploy_mix_pack` instead of `deploy` command.
->envoy run deploy_mix_pack
-
-The **deploy_mix_pack** task assume your local working copy have the same branch same env for remote deploy repo
-and you have `composer install` and optional `npm install` or `bower install` task done on your local working copy.
-( you could disable that `npm install` or `bower install` by comment out that line in Envoy.blade.php if you don't need/have npm/bower installed)
-then it will pack `vendor` and `node_modules` into deps.tgz and scp to the remote server to deploy to the target directory
-and git clone repo at remote server and deploy links and etc.
-
-#### Release and dependencies build and deploy from local
-
-if your remote server don't have access to your git repos or wouldn't be able to execute `composer install` successfully (e.g some internal web server got slow internet connection case composer install/update break down.)
-
->envoy run deploy_localrepo_install --branch=master --env=production
-
-The **deploy_localrepo_install** task will  clone repo locally and pack deps then scp to remote server and deploy links and etc.
-that will ONLY require your local server have access to remote server and git server.
-
 ### Rollback
 If you found your last deployment likely have some errors,you could simply run the rollback task on your local machine in the repository direcory
 
@@ -113,19 +109,19 @@ notice that will only relink your *current* release to previous release,
 it will NOT do the database migrate rollback.
 
 if you wanna rollback database migration you could run **BEFORE** you run *rollback* task:
->envoy run database_migrate_public_rollback --branch=master --env=production
+>envoy run dbrollback --branch=master --env=production
 
 if you run *rollback* task twice ,you will got *current* release still symbolic link to last release.
 
 ## How it Works
 
-Your `$deploybasepath` directory will look something like this.
+Your `$deploy_basepath` directory will look something like this.
 ```
 	mysite/
 	mysite2/
 	mysite3/
 ```
-Your `$deploybasepath/$appname` directory will look something like this after you init and then deploy.
+Your `$deploy_basepath/$app_name` directory will look something like this after you init and then deploy.
 
 ```
 	releases/release_20150717032737/
@@ -155,10 +151,8 @@ The deployment folder .env file and storage directory are symlinked to the paren
 
 ## Feature
 
-* You could deploy multi projects with different $appname and config settings on same target eserver.
-* Because of *Laravel Envoy* **Could NOT invoke Task Macro form another Task Macro yet**,
-You have to copy and paste one the block of Task Macros form (`deploy_mix_pack` | `deploy_mix_update` | `deploy_localrepo_install` | `deploy_remote_install`)
-to overwrite the `deploy` Task Macro code block to change the default behavior of `deploy` command.
+* You could deploy multi projects with different $app_name and config settings on same target server.
+
 * To explore more feature by RTFC, and custom task as you wish in your project.
 
 ## Notice
@@ -166,33 +160,29 @@ to overwrite the `deploy` Task Macro code block to change the default behavior o
 * http/https protocol might be ask for password for your private repos
 and that will break the git clone progress,
 use git protocol and setup a deploy key on your server and SCM service instead
-(e.g github repo ->settings->Deploy keys and set `$repo = 'git@github.com:user/mysite.git'` in your *envoy.config.php*)
+(e.g github repo ->settings->Deploy keys and set `$source_repo = 'git@github.com:user/mysite.git'` in your *envoy.config.php*)
 
-* the Task `cleanup_oldreleases` sometime may couldn't clean up all old release since your project contains too many files.
-and you could tweak keeps releases by change the command line `tail -n +4` 4 means keep 3 releases.
+* the Task `cleanupoldreleases_on_remote` sometime may couldn't clean up all old release since your project contains too many files.
+and you could tweak keeps releases by change the config settings var `$release_keep_count`.
 
 
 ## Example Usage
 
 you could [Deploy your app to DigitialOcean from Codeship using Envoy](http://laravelista.com/deploy-your-app-to-digitialocean-from-codeship-using-envoy/)
-with this Envoy.blade.php and envoy.config.php script instead and modify the last step command as you wish.
-
-you might want to change the command from:
+with this Envoy.blade.php and envoy.config.php script :
 
 >~/.composer/vendor/bin/envoy run deploy
 
-to:
-
->~/.composer/vendor/bin/envoy run deploy_localrepo_install --branch=master --env=production
 
 if your laravel project runs on a small RAM (e.g 512MB) droplet.
 
-and the `deploy_localrepo_install ` comand will do the `composer install` and pack staff on the deployment server(codeship VM here).so that your target server(droplet) won't have to run `composer install` and `git clone` on it.
+you could change config settings `$pack_mode = 'local';`.
 
 
 ## Todo
 
-* Make deploy command more flexible.
+* Make backup faster.
+* support multi server deploy.
 
 ## Contributing
 
