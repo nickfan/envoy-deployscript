@@ -182,7 +182,6 @@ you could change config settings `$pack_mode = 'local';`.
 ## Todo
 
 * Make backup faster.
-* support multi server deploy.
 
 ## Contributing
 

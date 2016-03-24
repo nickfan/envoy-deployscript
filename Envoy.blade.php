@@ -3,8 +3,9 @@
     if ( ! isset($app_name) ) {
         throw new Exception('App Name is not set');
     }
-    if ( ! isset($connection_string) ) {
-        throw new Exception('connection string (SSH login username/host is not set)');
+
+    if ( ! isset($server_connections) ) {
+        throw new Exception('Server connections(SSH login username/host is not set)');
     }
     if ( ! isset($source_repo)){
         throw new Exception('VCS Source repository is not set');
@@ -40,19 +41,47 @@
     if ( substr($deploy_basepath, 0, 1) !== '/' ) {
         throw new Exception('Careful - your base path does not begin with /');
     }
+
+    $server_labels = [];
+    $server_userathosts = [];
+    $server_ports = [];
+    $server_map = [];
+    foreach($server_connections as $server_label=>$conn_string){
+        is_numeric($server_label) && $server_label = $settings['server_prefix_default'].$server_label;
+        $conn_string = trim($conn_string);
+        $row_userathost = '';
+        $row_port = 22;
+        if(preg_match('/^(.*)(-p\s*[0-9]+)(.*)$/',$conn_string,$matches)){
+            foreach($matches as $line=>$match){
+                if($line>0){
+                    $match = trim($match);
+                    if(!empty($match)){
+                        if(substr($match,0,2)=='-p'){
+                            $row_port = intval(trim(substr($match,2)));
+                        }else{
+                            $row_userathost = $match;
+                        }
+                    }
+                }
+            }
+        }else{
+            $row_userathost = $conn_string;
+        }
+        $server_labels[] = $server_label;
+        $server_userathosts[] = $row_userathost;
+        $server_ports[] = $row_port;
+        $server_map[$server_label] = $conn_string;
+    }
+
+    $envoy_servers = array_merge(['local'=>'localhost',],$server_map);
+
     $now = new DateTime();
     $dateDisplay = $now->format('Y-m-d H:i:s');
     $date = $now->format('YmdHis');
     $env = isset($env) ? $env : $settings['env_default'];
     $branch = isset($branch) ? $branch : $settings['branch_default'];
     $deploy_mode = trim(strtolower($deploy_mode));
-    if($connection_port!=22){
-        $port_parameter_scp = ' -p '.$connection_port;
-        $port_parameter_rsync = ' --port '.$connection_port;
-    }else{
-        $port_parameter_scp = '';
-        $port_parameter_rsync = '';
-    }
+
     $excludeSharedDirPattern = '';
     if(!empty($shared_subdirs)){
         foreach($shared_subdirs as $subdirname){
@@ -136,10 +165,11 @@
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_releasesetup']).PHP_EOL;
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['subproc_versionsetup']);
     }
-@endsetup
-@servers(['local'=>'localhost','service' => $connection_string])
 
-@task('customtask_on_deploy',['on' => 'service'])
+@endsetup
+@servers($envoy_servers)
+
+@task('customtask_on_deploy',['on' => $server_labels, 'parallel' => true])
     if [ {{ intval($settings['enable_custom_task_after_deploy']) }} -eq 1 ]; then
         echo 'Calling Custom Task On Deploy...';
         cd {{ $app_dir }};
@@ -308,7 +338,7 @@
     echo '----';
 @endtask
 
-@task('show_env_remote',['on' => 'service'])
+@task('show_env_remote',['on' => $server_labels, 'parallel' => true])
     echo '...[execute at remote]';
     echo 'Current Release Name: {{$release}}';
     echo 'Current environment is {{$env}}';
@@ -325,22 +355,22 @@
     [ -d {{ $localdeploy_tmp_dir }} ] || mkdir -p {{ $localdeploy_tmp_dir }};
 @endtask
 
-@task('init_basedir_remote',['on' => 'service'])
+@task('init_basedir_remote',['on' => $server_labels, 'parallel' => true])
     {{--[ -d {{ $source_dir }} ] || mkdir -p {{ $source_dir }};--}}
     [ -d {{ $release_dir }} ] || mkdir -p {{ $release_dir }};
     [ -d {{ $version_dir }} ] || mkdir -p {{ $version_dir }};
     [ -d {{ $shared_dir }} ] || mkdir -p {{ $shared_dir }};
     [ -d {{ $tmp_dir }} ] || mkdir -p {{ $tmp_dir }};
 
-    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
     done
 @endtask
-@task('updatesharedpermissions_on_remote',['on' => 'service'])
+@task('updatesharedpermissions_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "update shared path permissions...";
-    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
@@ -351,28 +381,40 @@
 @endtask
 @task('rcp_env_to_remote',['on' => 'local'])
     echo "rcp env file to remote...";
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.{{ $env }} {{ $connection_string }}:{{ $app_base }}/.env.{{ $env }};
-    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $connection_string }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    server_userathosts=({{ implode(' ',$server_userathosts) }});
+    server_ports=({{ implode(' ',$server_ports) }});
+    for ((i=0;i<${#server_userathosts[@]};i++))
+    do
+        echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
+        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.{{ $env }} ${server_userathosts[$i]}:{{ $app_base }}/.env.{{ $env }};
+        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp  -p${server_ports[$i]} {{ $local_dir }}/envoy.config.{{ $env }}.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    done
     echo "rcp env file to remote Done.";
 @endtask
 
 @task('rcp_env_all_to_remote',['on' => 'local'])
     echo "rcp env all files to remote...";
-    [ -f {{ $local_dir }}/.env.development ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.development {{ $connection_string }}:{{ $app_base }}/.env.development;
-    [ -f {{ $local_dir }}/.env.local ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.local {{ $connection_string }}:{{ $app_base }}/.env.local;
-    [ -f {{ $local_dir }}/.env.production ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.production {{ $connection_string }}:{{ $app_base }}/.env.production;
-    [ -f {{ $local_dir }}/.env.testing ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.testing {{ $connection_string }}:{{ $app_base }}/.env.testing;
-    [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/.env.{{ $env }} {{ $connection_string }}:{{ $app_base }}/.env.{{ $env }};
+    server_userathosts=({{ implode(' ',$server_userathosts) }});
+    server_ports=({{ implode(' ',$server_ports) }});
+    for ((i=0;i<${#server_userathosts[@]};i++))
+    do
+        echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
+        [ -f {{ $local_dir }}/.env.development ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.development ${server_userathosts[$i]}:{{ $app_base }}/.env.development;
+        [ -f {{ $local_dir }}/.env.local ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.local ${server_userathosts[$i]}:{{ $app_base }}/.env.local;
+        [ -f {{ $local_dir }}/.env.production ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.production ${server_userathosts[$i]}:{{ $app_base }}/.env.production;
+        [ -f {{ $local_dir }}/.env.testing ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.testing ${server_userathosts[$i]}:{{ $app_base }}/.env.testing;
+        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.{{ $env }} ${server_userathosts[$i]}:{{ $app_base }}/.env.{{ $env }};
 
-    [ -f {{ $local_dir }}/envoy.config.development.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.development.php {{ $connection_string }}:{{ $app_base }}/envoy.config.development.php;
-    [ -f {{ $local_dir }}/envoy.config.local.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.local.php {{ $connection_string }}:{{ $app_base }}/envoy.config.local.php;
-    [ -f {{ $local_dir }}/envoy.config.production.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.production.php {{ $connection_string }}:{{ $app_base }}/envoy.config.production.php;
-    [ -f {{ $local_dir }}/envoy.config.testing.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.testing.php {{ $connection_string }}:{{ $app_base }}/envoy.config.testing.php;
-    [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp {{ $port_parameter_scp }} {{ $local_dir }}/envoy.config.{{ $env }}.php {{ $connection_string }}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+        [ -f {{ $local_dir }}/envoy.config.development.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.development.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.development.php;
+        [ -f {{ $local_dir }}/envoy.config.local.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.local.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.local.php;
+        [ -f {{ $local_dir }}/envoy.config.production.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.production.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.production.php;
+        [ -f {{ $local_dir }}/envoy.config.testing.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.testing.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.testing.php;
+        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.{{ $env }}.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    done
     echo "rcp env all files to remote Done.";
 @endtask
 
-@task('link_env_on_remote',['on' => 'service'])
+@task('link_env_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "link env on remote...";
     [ -f {{ $app_base }}/.env.{{ $env }} ] && rm -rf {{ $app_base }}/.env;
     [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $app_base }}/.env;
@@ -511,7 +553,13 @@
 @task('rcpreleasepack_to_remote',['on' => 'local'])
     echo "rcp localpack release to remote...";
     if [ -f {{ $localdeploy_tmp_dir }}/release.tgz ]; then
-        rsync -avz --progress {{ $port_parameter_rsync }} {{ $localdeploy_tmp_dir }}/release.tgz {{ $connection_string }}:{{ $tmp_dir }}/;
+        server_userathosts=({{ implode(' ',$server_userathosts) }});
+        server_ports=({{ implode(' ',$server_ports) }});
+        for ((i=0;i<${#server_userathosts[@]};i++))
+        do
+            echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
+            rsync -avz --progress --port ${server_ports[$i]} {{ $localdeploy_tmp_dir }}/release.tgz ${server_userathosts[$i]}:{{ $tmp_dir }}/;
+        done
     else
         echo "localpack release NOT EXISTS.";
         exit;
@@ -519,7 +567,7 @@
     echo "rcp localpack release to remote Done.";
 @endtask
 
-@task('extractreleasepack_on_remote',['on' => 'service'])
+@task('extractreleasepack_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "extract pack release on remote...";
     if [ -f {{ $tmp_dir }}/release.tgz ]; then
         [ -d {{ $tmp_dir }}/{{ $source_name }} ] && rm -rf {{ $tmp_dir }}/{{ $source_name }};
@@ -544,7 +592,7 @@
     echo "extract pack release on remote Done.";
 @endtask
 
-@task('updaterepo_remotesrc',['on' => 'service'])
+@task('updaterepo_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Repository update...";
     if [ -d {{ $source_dir }} ]; then
         echo "Repository exits only update...";
@@ -559,14 +607,14 @@
     echo "RemoteSource Repository updated.";
 @endtask
 
-@task('envsetup_remotesrc',['on' => 'service'])
+@task('envsetup_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Repository Environment file setup";
     [ -f {{ $source_dir }}/.env.{{ $env }} ] && cp -RLpf {{ $source_dir }}/.env.{{ $env }} {{ $source_dir }}/.env;
     [ -f {{ $app_base }}/.env.{{ $env }} ] && cp -RLpf {{ $app_base }}/.env.{{ $env }} {{ $source_dir }}//.env;
     echo "RemoteSource Repository Environment file setup done";
 @endtask
 
-@task('depsinstall_remotesrc',['on' => 'service'])
+@task('depsinstall_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Dependencies install...";
     cd {{ $source_dir }};
     if [ {{ intval($settings['deps_install_component']['composer']) }} -eq 1 ]; then
@@ -592,7 +640,7 @@
     echo "RemoteSource Dependencies installed.";
 @endtask
 
-@task('extracustomoverwrite_remotesrc',['on' => 'service'])
+@task('extracustomoverwrite_remotesrc',['on' => $server_labels, 'parallel' => true])
     if [ {{ intval($settings['extracustomoverwrite_enable']) }} -eq 1 ]; then
         echo "RemoteSource Extra custom files overwriting...";
         cd {{ $source_dir }};
@@ -603,7 +651,7 @@
     fi
 @endtask
 
-@task('runtimeoptimize_remotesrc',['on' => 'service'])
+@task('runtimeoptimize_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Runtime optimize...";
     cd {{ $source_dir }};
     if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
@@ -629,9 +677,9 @@
     echo "RemoteSource Runtime optimized.";
 @endtask
 
-@task('syncshareddata_remotesrc',['on' => 'service'])
+@task('syncshareddata_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Sync SharedData...";
-    shareddirs=({{ implode(' ',$shared_subdirs) }})
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
@@ -644,10 +692,11 @@
     echo "RemoteSource Sync SharedData Done.";
 @endtask
 
-@task('prepare_remoterelease',['on' => 'service'])
+@task('prepare_remoterelease',['on' => $server_labels, 'parallel' => true])
     echo "RemoteRelease Prepare...";
     rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $source_dir }}/ {{ $release_dir }}/{{ $release }}/;
 
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         if [ -e {{ $release_dir }}/{{ $release }}/${subdirname} ]; then
@@ -667,7 +716,7 @@
     echo "RemoteRelease Prepare Done.";
 @endtask
 
-@task('baseenvlink_remoterelease',['on' => 'service'])
+@task('baseenvlink_remoterelease',['on' => $server_labels, 'parallel' => true])
     echo "RemoteRelease Environment file setup...";
     if [ {{ intval($settings['use_appbase_envfile']) }} -eq 1 ]; then
         [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
@@ -697,7 +746,7 @@
     fi
     echo "RemoteRelease Environment file setup Done.";
 @endtask
-@task('depsreinstall_remoterelease',['on' => 'service'])
+@task('depsreinstall_remoterelease',['on' => $server_labels, 'parallel' => true])
     if [ {{ intval($settings['deps_reinstall_on_remote_release']) }} -eq 1 ]; then
         echo "RemoteRelease Dependencies reinstall...";
         cd {{ $release_dir }}/{{ $release }};
@@ -746,8 +795,9 @@
     fi
 @endtask
 
-@task('syncreleasetoapp_version',['on' => 'service'])
+@task('syncreleasetoapp_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Sync Release to App...";
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
         [ -L {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
@@ -849,7 +899,7 @@
     echo "RemoteVersion Sync Release to App Done.";
 @endtask
 
-@task('databasemigrate_version',['on' => 'service'])
+@task('databasemigrate_version',['on' => $server_labels, 'parallel' => true])
     if [ {{ intval($settings['databasemigrate_on_deploy']==1) }} -eq 1 ]; then
         echo "RemoteVersion Release Database Migrate...";
         cd {{ $app_dir }};
@@ -858,7 +908,7 @@
     fi
 @endtask
 
-@task('cleanupoldreleases_on_remote',['on' => 'service'])
+@task('cleanupoldreleases_on_remote',['on' => $server_labels, 'parallel' => true])
     echo 'Cleanup up old releases';
     cd {{ $release_dir }};
     {{--ls -1d release_* | head -n -{{ intval($release_keep_count) }} | xargs -d '\n' rm -Rf;--}}
@@ -871,14 +921,14 @@
     [ -f {{ $localdeploy_tmp_dir }}/release.tgz ] && rm -rf {{ $localdeploy_tmp_dir }}/release.tgz;
     echo "Cleanup Local tempfiles done.";
 @endtask
-@task('cleanup_tempfiles_remote',['on' => 'service'])
+@task('cleanup_tempfiles_remote',['on' => $server_labels, 'parallel' => true])
     echo 'Cleanup Remote tempfiles';
     [ -f {{ $tmp_dir }}/release.tgz ] && rm -rf {{ $tmp_dir }}/release.tgz;
     [ -d {{ $app_base }}/source_prev ] && rm -rf {{ $app_base }}/source_prev;
     echo "Cleanup Remote tempfiles done.";
 @endtask
 
-@task('rollback_version',['on' => 'service'])
+@task('rollback_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Release Rollback...";
     if [ {{ intval($settings['databasemigraterollback_on_rollback']==1) }} -eq 1 ]; then
         echo "RemoteVersion Release Database Migrate Rollback...";
@@ -886,6 +936,7 @@
         php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
         echo "RemoteVersion Release Database Migrate Rollback Done.";
     fi
+    shareddirs=({{ implode(' ',$shared_subdirs) }});
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
         if [ -d {{ $releaselast_dir_incr }} ]; then
@@ -1051,14 +1102,14 @@
 @endtask
 
 
-@task('databasemigraterollback_version',['on' => 'service'])
+@task('databasemigraterollback_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Release Database Migrate Rollback...";
     cd {{ $app_dir }};
     php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
     echo "RemoteVersion Release Database Migrate Rollback Done.";
 @endtask
 
-@task('backupapp_version',['on' => 'service'])
+@task('backupapp_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Backup Current Version Release...";
     cd {{ $app_base }}/;
     tar czf {{ $tmp_dir }}/backup_release_files_tmp.tgz {{ $version_name }}/.;
@@ -1068,7 +1119,7 @@
     echo "RemoteVersion Backup Current Version Release Done.";
 @endtask
 
-@task('backupshareddata_version',['on' => 'service'])
+@task('backupshareddata_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Backup Current Shared Data...";
     cd {{ $app_base }}/;
     tar czf {{ $tmp_dir }}/backup_shareddata_files_tmp.tgz shared;

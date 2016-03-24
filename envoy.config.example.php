@@ -6,16 +6,20 @@
  * application name
  */
 $app_name = 'mysite';
+
 /**
  * remote server connection string
- * @example 'vagrant@127.0.0.1'
+ * @example row set: 'webserver1'=>'-p 2222 vagrant@127.0.0.1'
+ * @example row set: 'webserver2'=>'user@191.168.1.10 -p2222'
+ * @example row set: 'webserver3'=>'root@example.com'
  */
-$connection_string = 'user@127.0.0.1';
-/**
- * remote server connection port default 22 ,vagrant default 2222
- * @example 22
- */
-$connection_port = 22;
+$server_connections = array(
+    'web'=>'www-data@192.168.0.1',
+    'vagrant'=>' vagrant@127.0.0.1 -p 2222',        // you could spec port number args.
+    'user@127.0.0.1 -p 22',                       // no named key is supported
+    'script'=>'-p 2222 www-data@example.com',       // another format
+);
+
 /**
  * @notice http/https protocol might be ask for password for your private repos
  *  and that will break the git clone progress,use git protocol instead
