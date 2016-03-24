@@ -851,6 +851,7 @@
         echo "{{ $release }}" > {{ $version_dir }}/release_name_current;
         [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
         [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+        [ -f {{ $version_dir }}/release_name_last ] && unlink {{ $version_dir }}/release_name_last;
         ln -nfs {{ $release_dir }}/{{ $release }} {{ $releasecurrent_dir_link }};
     else
         {{-- link mode--}}
@@ -893,6 +894,7 @@
         echo "{{ $release }}" > {{ $version_dir }}/release_name_current;
         [ -d {{ $releaselast_dir_incr }} ] && rm -rf {{ $releaselast_dir_incr }};
         [ -d {{ $releaselast_dir_link }} ] && unlink {{ $releaselast_dir_link }};
+        [ -f {{ $version_dir }}/release_name_last ] && unlink {{ $version_dir }}/release_name_last;
         ln -nfs {{ $release_dir }}/{{ $release }} {{ $releasecurrent_dir_link }};
     fi
     chgrp -h {{$service_owner}} {{ $app_dir }};
