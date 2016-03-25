@@ -15,12 +15,12 @@ $app_name = 'mysite';
  * @example row set: 'webserver2'=>['user@191.168.1.10 -p2222','user'],
  * @example row set: 'root@example.com',
  */
-$server_connections = array(
+$server_connections = [
     'mylaptop'=>'user@127.0.0.1',
 //    'webserver1'=>['conn'=>'-p 2222 vagrant@127.0.0.1','owner'=>'vagrant'],
 //    'webserver2'=>['user@191.168.1.10 -p2222','user'],
 //    'root@example.com',
-);
+];
 
 /**
  * @notice http/https protocol might be ask for password for your private repos
@@ -57,14 +57,14 @@ $release_keep_count = 2;
 /**
  * shared sub-directories name , eg: storage
  */
-$shared_subdirs = array(
+$shared_subdirs = [
     'bootstrap/cache',
     'storage',
-);
+];
 /**
  * Misc. Settings
  */
-$settings = array(
+$settings = [
     // default env set
     'env_default'=>'production',
     // default branch set
@@ -82,34 +82,34 @@ $settings = array(
     // use shared base app_path env file.
     'use_appbase_envfile'=>true,
     // depends install components settings.
-    'deps_install_component'=>array(
+    'deps_install_component'=> [
         'composer'=>true,
         'npm'=>false,
         'bower'=>false,
         'gulp'=>false,
-    ),
-    'deps_install_command'=>array(
+    ],
+    'deps_install_command'=> [
         'composer'=>'composer install --prefer-dist --no-scripts --no-interaction && composer dump-autoload --optimize',
         'npm'=>'npm install',
         'bower'=>'bower install',
         'gulp'=>'gulp',
-    ),
-    'runtime_optimize_component'=>array(
+    ],
+    'runtime_optimize_component'=> [
         'composer'=>true,
-        'artisan'=>array(
+        'artisan'=> [
             'optimize'=>false,
             'config_cache'=>false,
             'route_cache'=>false,
-        ),
-    ),
-    'runtime_optimize_command'=>array(
+        ],
+    ],
+    'runtime_optimize_command'=> [
         'composer'=>'composer dump-autoload --optimize',
-        'artisan'=>array(
+        'artisan'=> [
             'optimize'=>'php artisan clear-compiled && php artisan optimize',
             'config_cache'=>'php artisan config:cache',
             'route_cache'=>'php artisan route:cache',
-        ),
-    ),
+        ],
+    ],
     // do database migrate on deploy
     'databasemigrate_on_deploy'=>true,
     // allow extra custom files overwrite.
@@ -120,4 +120,4 @@ $settings = array(
     'databasemigraterollback_on_rollback'=>false,
     // enable custom task after deploy
     'enable_custom_task_after_deploy'=>true,
-);
+];

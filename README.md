@@ -78,7 +78,7 @@ You could tweak your **envoy.config.php** for your application situation.
 
 ### Deploy-Init
 
-When you're happy with the config, run the init task on your local machine by running the following in the repository directory
+When you're ready with the config, run the init task on your local machine by running the following in the repository directory
 
 >envoy run deploy_init
 

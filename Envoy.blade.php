@@ -149,8 +149,8 @@
 
     $spec_procs = array(
         'pack_localpack'=>array(
-            'show_env_local',
-            'init_basedir_local',
+            //'show_env_local',
+            //'init_basedir_local',
             'updaterepo_localsrc',
             'envsetup_localsrc',
             'depsinstall_localsrc',
@@ -165,8 +165,8 @@
             'extractreleasepack_on_remote',
         ),
         'pack_remotepack'=>array(
-            'show_env_remote',
-            'init_basedir_remote',
+            //'show_env_remote',
+            //'init_basedir_remote',
             'updaterepo_remotesrc',
             'envsetup_remotesrc',
             'depsinstall_remotesrc',
@@ -189,6 +189,7 @@
         ),
     );
     $deploy_macro_context = '';
+    $deploy_macro_context .= implode(PHP_EOL,['show_env_local','init_basedir_local','init_basedir_remote','rcp_env_to_remote','link_env_on_remote'].PHP_EOL;
     if($pack_mode=='local'){
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['pack_localpack']).PHP_EOL;
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['rcp_localpack']).PHP_EOL;
@@ -243,6 +244,7 @@
     init_basedir_local
     init_basedir_remote
     rcp_env_to_remote
+    link_env_on_remote
     updaterepo_remotesrc
     envsetup_remotesrc
     depsinstall_remotesrc
@@ -265,6 +267,7 @@
     init_basedir_local
     init_basedir_remote
     rcp_env_to_remote
+    link_env_on_remote
     updaterepo_localsrc
     envsetup_localsrc
     depsinstall_localsrc
