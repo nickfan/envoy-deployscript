@@ -189,7 +189,7 @@
         ),
     );
     $deploy_macro_context = '';
-    $deploy_macro_context .= implode(PHP_EOL,['show_env_local','init_basedir_local','init_basedir_remote','rcp_env_to_remote','link_env_on_remote'].PHP_EOL;
+    $deploy_macro_context .= implode(PHP_EOL,['show_env_local','init_basedir_local','init_basedir_remote','rcp_env_to_remote','link_env_on_remote']).PHP_EOL;
     if($pack_mode=='local'){
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['pack_localpack']).PHP_EOL;
         $deploy_macro_context .= implode(PHP_EOL,$spec_procs['rcp_localpack']).PHP_EOL;
