@@ -52,14 +52,14 @@
         $row_owner = $settings['service_owner_default'];
 
         if(is_array($row_conn_settings)){
-            if(isset($row_conn_settings['conn']){
+            if(isset($row_conn_settings['conn'])){
                 $row_conn_string = $row_conn_settings['conn'];
-                if(isset($row_conn_settings['owner']){
+                if(isset($row_conn_settings['owner'])){
                     $row_owner = $row_conn_settings['owner']; $row_owner_set = true;
                 }
-            }elseif(isset($row_conn_settings[0]){
+            }elseif(isset($row_conn_settings[0])){
                 $row_conn_string = $row_conn_settings[0];
-                if(isset($row_conn_settings[1]){
+                if(isset($row_conn_settings[1])){
                     $row_owner = $row_conn_settings[1]; $row_owner_set = true;
                 }
             }else{
@@ -83,7 +83,7 @@
                 }
             }
         }else{
-            $row_userathost = $conn_string;
+            $row_userathost = $row_conn_string;
         }
 
         $row_userandhostset = explode('@',$row_userathost);
@@ -105,7 +105,7 @@
         $server_userathosts[] = $row_userathost;
         $server_hosts[] = $row_host;
         $server_ports[] = $row_port;
-        $server_map[$server_label] = $conn_string;
+        $server_map[$server_label] = $row_conn_string;
     }
 
     $envoy_servers = array_merge(['local'=>'localhost',],$server_map);
