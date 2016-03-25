@@ -11,10 +11,6 @@
         throw new Exception('VCS Source repository is not set');
     }
 
-    if ( ! isset($service_owner) ) {
-        throw new Exception('Service Owner is not set');
-    }
-
     if ( ! isset($pack_mode) ) {
         throw new Exception('Pack Mode is not set');
     }
@@ -24,7 +20,6 @@
     if ( ! isset($settings) ) {
         throw new Exception('Misc Settings is not set');
     }
-
 
     if ( ! isset($deploy_basepath) ) {
         throw new Exception('Base Path is not set');
@@ -43,15 +38,38 @@
     }
 
     $server_labels = [];
+    $server_owners = [];
     $server_userathosts = [];
+    $server_hosts = [];
     $server_ports = [];
     $server_map = [];
-    foreach($server_connections as $server_label=>$conn_string){
-        is_numeric($server_label) && $server_label = $settings['server_prefix_default'].$server_label;
-        $conn_string = trim($conn_string);
+    foreach($server_connections as $row_label=>$row_conn_settings){
         $row_userathost = '';
+        $row_host = '';
         $row_port = 22;
-        if(preg_match('/^(.*)(-p\s*[0-9]+)(.*)$/',$conn_string,$matches)){
+        $row_conn_string = '';
+        $row_owner_set = false;
+        $row_owner = $settings['service_owner_default'];
+
+        if(is_array($row_conn_settings)){
+            if(isset($row_conn_settings['conn']){
+                $row_conn_string = $row_conn_settings['conn'];
+                if(isset($row_conn_settings['owner']){
+                    $row_owner = $row_conn_settings['owner']; $row_owner_set = true;
+                }
+            }elseif(isset($row_conn_settings[0]){
+                $row_conn_string = $row_conn_settings[0];
+                if(isset($row_conn_settings[1]){
+                    $row_owner = $row_conn_settings[1]; $row_owner_set = true;
+                }
+            }else{
+                throw Exception('server connections settings error at #'.$row_label);
+            }
+        }else{
+            $row_conn_string = trim($row_conn_settings);
+        }
+
+        if(preg_match('/^(.*)(-p\s*[0-9]+)(.*)$/',$row_conn_string,$matches)){
             foreach($matches as $line=>$match){
                 if($line>0){
                     $match = trim($match);
@@ -67,8 +85,25 @@
         }else{
             $row_userathost = $conn_string;
         }
+
+        $row_userandhostset = explode('@',$row_userathost);
+        if(count($row_userandhostset)>1){
+            if($row_owner_set==false){
+                $row_owner = trim($row_userandhostset[0]);
+                $row_owner_set = true;
+            }
+            $row_host = trim($row_userandhostset[1]);
+        }else{
+            $row_host = trim($row_userandhostset[0]);
+        }
+
+
+        $server_label = $row_label;
+        is_numeric($server_label) && $server_label = $settings['server_prefix_default'].$server_label;
         $server_labels[] = $server_label;
+        $server_owners[] = $row_owner;
         $server_userathosts[] = $row_userathost;
+        $server_hosts[] = $row_host;
         $server_ports[] = $row_port;
         $server_map[$server_label] = $conn_string;
     }
@@ -353,6 +388,7 @@
     [ -d {{ $localdeploy_base }} ] || mkdir -p {{ $localdeploy_base }};
     {{--[ -d {{ $localdeploy_source_dir }} ] || mkdir -p {{ $localdeploy_source_dir }};--}}
     [ -d {{ $localdeploy_tmp_dir }} ] || mkdir -p {{ $localdeploy_tmp_dir }};
+    [ -d {{ $localdeploy_tmp_dir }}/servers ] || mkdir -p {{ $localdeploy_tmp_dir }}/servers;
 @endtask
 
 @task('init_basedir_remote',['on' => $server_labels, 'parallel' => true])
@@ -370,22 +406,31 @@
 @endtask
 @task('updatesharedpermissions_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "update shared path permissions...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
-        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chgrp -R ${service_owner} {{ $shared_dir }}/${subdirname};
         chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
     done
     echo "update shared path permissions Done.";
 @endtask
 @task('rcp_env_to_remote',['on' => 'local'])
     echo "rcp env file to remote...";
+    server_owners=({{ implode(' ',$server_owners) }});
+    server_hosts=({{ implode(' ',$server_hosts) }});
     server_userathosts=({{ implode(' ',$server_userathosts) }});
     server_ports=({{ implode(' ',$server_ports) }});
     for ((i=0;i<${#server_userathosts[@]};i++))
     do
         echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
+        echo "${server_owners[$i]}" > {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]};
+        scp -p${server_ports[$i]} {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]} ${server_userathosts[$i]}:{{ $tmp_dir }}/service_owner;
         [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.{{ $env }} ${server_userathosts[$i]}:{{ $app_base }}/.env.{{ $env }};
         [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp  -p${server_ports[$i]} {{ $local_dir }}/envoy.config.{{ $env }}.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.{{ $env }}.php;
     done
@@ -394,11 +439,15 @@
 
 @task('rcp_env_all_to_remote',['on' => 'local'])
     echo "rcp env all files to remote...";
+    server_owners=({{ implode(' ',$server_owners) }});
+    server_hosts=({{ implode(' ',$server_hosts) }});
     server_userathosts=({{ implode(' ',$server_userathosts) }});
     server_ports=({{ implode(' ',$server_ports) }});
     for ((i=0;i<${#server_userathosts[@]};i++))
     do
         echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
+        echo "${server_owners[$i]}" > {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]};
+        scp -p${server_ports[$i]} {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]} ${server_userathosts[$i]}:{{ $tmp_dir }}/service_owner;
         [ -f {{ $local_dir }}/.env.development ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.development ${server_userathosts[$i]}:{{ $app_base }}/.env.development;
         [ -f {{ $local_dir }}/.env.local ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.local ${server_userathosts[$i]}:{{ $app_base }}/.env.local;
         [ -f {{ $local_dir }}/.env.production ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.production ${server_userathosts[$i]}:{{ $app_base }}/.env.production;
@@ -416,13 +465,18 @@
 
 @task('link_env_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "link env on remote...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     [ -f {{ $app_base }}/.env.{{ $env }} ] && rm -rf {{ $app_base }}/.env;
     [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $app_base }}/.env;
-    [ -f {{ $app_base }}/.env.{{ $env }} ] && chgrp -h {{$service_owner}} {{ $app_base }}/.env;
+    [ -f {{ $app_base }}/.env.{{ $env }} ] && chgrp -h ${service_owner} {{ $app_base }}/.env;
 
     [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && rm -rf {{ $app_base }}/envoy.config.php;
     [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $app_base }}/envoy.config.php;
-    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && chgrp -h {{$service_owner}} {{ $app_base }}/envoy.config.php;
+    [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && chgrp -h ${service_owner} {{ $app_base }}/envoy.config.php;
     echo "link env on remote Done.";
 @endtask
 
@@ -679,14 +733,19 @@
 
 @task('syncshareddata_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Sync SharedData...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
-        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chgrp -R ${service_owner} {{ $shared_dir }}/${subdirname};
         chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
         rsync --progress -e ssh -avzh --delay-updates --exclude "*.logs" {{ $source_dir }}/${subdirname}/ {{ $shared_dir }}/${subdirname}/;
-        chgrp -R {{$service_owner}} {{ $shared_dir }}/${subdirname};
+        chgrp -R ${service_owner} {{ $shared_dir }}/${subdirname};
         chmod -R ug+rwx {{ $shared_dir }}/${subdirname};
     done
     echo "RemoteSource Sync SharedData Done.";
@@ -696,6 +755,11 @@
     echo "RemoteRelease Prepare...";
     rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $source_dir }}/ {{ $release_dir }}/{{ $release }}/;
 
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     shareddirs=({{ implode(' ',$shared_subdirs) }});
     for subdirname in ${shareddirs[@]};
     do
@@ -710,7 +774,7 @@
             rm -rf {{ $release_dir }}/{{ $release }}/${subdirname};
             ln -nfs {{ $shared_dir }}/${subdirname} {{ $release_dir }}/{{ $release }}/${subdirname};
         fi
-        chgrp -R {{$service_owner}} {{ $release_dir }}/{{ $release }}/${subdirname};
+        chgrp -R ${service_owner} {{ $release_dir }}/{{ $release }}/${subdirname};
         chmod -R ug+rwx {{ $release_dir }}/{{ $release }}/${subdirname};
     done
     echo "RemoteRelease Prepare Done.";
@@ -718,30 +782,35 @@
 
 @task('baseenvlink_remoterelease',['on' => $server_labels, 'parallel' => true])
     echo "RemoteRelease Environment file setup...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     if [ {{ intval($settings['use_appbase_envfile']) }} -eq 1 ]; then
         [ -f {{ $release_dir }}/{{ $release }}/.env ] && rm -rf {{ $release_dir }}/{{ $release }}/.env;
         [ -f {{ $app_base }}/.env ] && ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
         [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $release_dir }}/{{ $release }}/.env;
-        [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+        [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/.env;
 
         [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && rm -rf {{ $release_dir }}/{{ $release }}/envoy.config.php;
         [ -f {{ $app_base }}/envoy.config.php ] && ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
         [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
-        [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+        [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/envoy.config.php;
     else
         if [ ! -f {{ $release_dir }}/{{ $release }}/.env ]; then
             [ -f {{ $app_base }}/.env ] && ln -nfs {{ $app_base }}/.env {{ $release_dir }}/{{ $release }}/.env;
             [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $release_dir }}/{{ $release }}/.env;
-            [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+            [ -f {{ $release_dir }}/{{ $release }}/.env ] && chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/.env;
         else
-            chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/.env;
+            chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/.env;
         fi
         if [ ! -f {{ $release_dir }}/{{ $release }}/envoy.config.php ]; then
             [ -f {{ $app_base }}/envoy.config.php ] && ln -nfs {{ $app_base }}/envoy.config.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
             [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $release_dir }}/{{ $release }}/envoy.config.php;
-            [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+            [ -f {{ $release_dir }}/{{ $release }}/envoy.config.php ] && chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/envoy.config.php;
         else
-            chgrp -h {{$service_owner}} {{ $release_dir }}/{{ $release }}/envoy.config.php;
+            chgrp -h ${service_owner} {{ $release_dir }}/{{ $release }}/envoy.config.php;
         fi
     fi
     echo "RemoteRelease Environment file setup Done.";
@@ -797,6 +866,11 @@
 
 @task('syncreleasetoapp_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Sync Release to App...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     shareddirs=({{ implode(' ',$shared_subdirs) }});
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
@@ -818,7 +892,7 @@
                     rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
                     ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
                 fi
-                chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                chgrp -R ${service_owner} {{ $releaseprev_dir_incr }}/${subdirname};
                 chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
             done
             if [ -L {{ $app_dir }} ]; then
@@ -840,7 +914,7 @@
                 rm -rf {{ $app_dir }}/${subdirname};
                 ln -nfs {{ $shared_dir }}/${subdirname} {{ $app_dir }}/${subdirname};
             fi
-            chgrp -R {{$service_owner}} {{ $app_dir }}/${subdirname};
+            chgrp -R ${service_owner} {{ $app_dir }}/${subdirname};
             chmod -R ug+rwx {{ $app_dir }}/${subdirname};
         done
         if [ -e {{ $version_dir }}/release_name_current ]; then
@@ -876,7 +950,7 @@
                         rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
                         ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
                     fi
-                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chgrp -R ${service_owner} {{ $releaseprev_dir_incr }}/${subdirname};
                     chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
                 done
                 mv {{ $app_dir }} {{ $releaseprev_dir_link }};
@@ -897,7 +971,7 @@
         [ -f {{ $version_dir }}/release_name_last ] && unlink {{ $version_dir }}/release_name_last;
         ln -nfs {{ $release_dir }}/{{ $release }} {{ $releasecurrent_dir_link }};
     fi
-    chgrp -h {{$service_owner}} {{ $app_dir }};
+    chgrp -h ${service_owner} {{ $app_dir }};
     echo "RemoteVersion Sync Release to App Done.";
 @endtask
 
@@ -938,6 +1012,11 @@
         php artisan migrate:rollback --env={{ $env }} --force --no-interaction;
         echo "RemoteVersion Release Database Migrate Rollback Done.";
     fi
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=$(<{{ $tmp_dir }}/service_owner);
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     shareddirs=({{ implode(' ',$shared_subdirs) }});
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
@@ -958,7 +1037,7 @@
                         rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
                         ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
                     fi
-                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chgrp -R ${service_owner} {{ $releaseprev_dir_incr }}/${subdirname};
                     chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
                 done
                 unlink {{ $app_dir }};
@@ -995,7 +1074,7 @@
                         rm -rf {{ $releaselast_dir_incr }}/${subdirname};
                         ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
                     fi
-                    chgrp -R {{$service_owner}} {{ $releaselast_dir_incr }}/${subdirname};
+                    chgrp -R ${service_owner} {{ $releaselast_dir_incr }}/${subdirname};
                     chmod -R ug+rwx {{ $releaselast_dir_incr }}/${subdirname};
                 done
                 unlink {{ $app_dir }};
@@ -1037,7 +1116,7 @@
                         rm -rf {{ $releaseprev_dir_incr }}/${subdirname};
                         ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaseprev_dir_incr }}/${subdirname};
                     fi
-                    chgrp -R {{$service_owner}} {{ $releaseprev_dir_incr }}/${subdirname};
+                    chgrp -R ${service_owner} {{ $releaseprev_dir_incr }}/${subdirname};
                     chmod -R ug+rwx {{ $releaseprev_dir_incr }}/${subdirname};
                 done
                 [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaseprev_dir_link }};
@@ -1075,7 +1154,7 @@
                         rm -rf {{ $releaselast_dir_incr }}/${subdirname};
                         ln -nfs {{ $shared_dir }}/${subdirname} {{ $releaselast_dir_incr }}/${subdirname};
                     fi
-                    chgrp -R {{$service_owner}} {{ $releaselast_dir_incr }}/${subdirname};
+                    chgrp -R ${service_owner} {{ $releaselast_dir_incr }}/${subdirname};
                     chmod -R ug+rwx {{ $releaselast_dir_incr }}/${subdirname};
                 done
                 [ -d {{ $app_dir }} ] && mv {{ $app_dir }} {{ $releaselast_dir_link }};

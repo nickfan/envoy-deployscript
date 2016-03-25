@@ -8,16 +8,18 @@
 $app_name = 'mysite';
 
 /**
- * remote server connection string
- * @example row set: 'webserver1'=>'-p 2222 vagrant@127.0.0.1'
- * @example row set: 'webserver2'=>'user@191.168.1.10 -p2222'
- * @example row set: 'webserver3'=>'root@example.com'
+ * server settings
+ * conn : remote server connection string
+ * owner : (optional) remote server service user/owner(group) that run the php-fpm/nginx and the application files permissions.
+ * @example row set: 'webserver1'=>['conn'=>'-p 2222 vagrant@127.0.0.1','owner'=>'vagrant'],
+ * @example row set: 'webserver2'=>['user@191.168.1.10 -p2222','user'],
+ * @example row set: 'root@example.com',
  */
 $server_connections = array(
-    'web'=>'www-data@192.168.0.1',
-    'vagrant'=>' vagrant@127.0.0.1 -p 2222',        // you could spec port number args.
-    'user@127.0.0.1 -p 22',                       // no named key is supported
-    'script'=>'-p 2222 www-data@example.com',       // another format
+    'mylaptop'=>'user@127.0.0.1',
+//    'webserver1'=>['conn'=>'-p 2222 vagrant@127.0.0.1','owner'=>'vagrant'],
+//    'webserver2'=>['user@191.168.1.10 -p2222','user'],
+//    'root@example.com',
 );
 
 /**
@@ -31,11 +33,7 @@ $source_repo = 'git@localhost:user/myrepo.git';
  * @example '/var/www'
  */
 $deploy_basepath = '/var/www';
-/**
- * remote server service user(group) that run the php-fpm/nginx and the application files permissions.
- * @example 'www-data'
- */
-$service_owner = 'www-data';
+
 
 /**
  * pack mode local | remote
@@ -54,7 +52,7 @@ $deploy_mode = 'link';
 /**
  * number of releases keep on remote
  */
-$release_keep_count = 3;
+$release_keep_count = 2;
 
 /**
  * shared sub-directories name , eg: storage
@@ -71,6 +69,12 @@ $settings = array(
     'env_default'=>'production',
     // default branch set
     'branch_default'=>'master',
+    // default remote server service user(group) that run the php-fpm/nginx and the application files permissions.
+    // @example 'www-data'
+    'service_owner_default'=>'www-data',
+    // default server prefix for named user at host alias.
+    // @example 'server'
+    'server_prefix_default'=>'server',
     // vcs update local workingcopy before deployment.
     'workingcopy_update'=>true,
     // depends install for local workingcopy before deployment.
@@ -111,7 +115,7 @@ $settings = array(
     // allow extra custom files overwrite.
     'extracustomoverwrite_enable'=>false,
     // depends reinstall on remote release.
-    'deps_reinstall_on_remote_release'=>true,
+    'deps_reinstall_on_remote_release'=>false,
     // do database migrate rollback on rollback
     'databasemigraterollback_on_rollback'=>false,
     // enable custom task after deploy
