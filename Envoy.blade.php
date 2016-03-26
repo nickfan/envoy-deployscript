@@ -401,8 +401,8 @@
     [ -d {{ $shared_dir }} ] || mkdir -p {{ $shared_dir }};
     [ -d {{ $tmp_dir }} ] || mkdir -p {{ $tmp_dir }};
 
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
-    for subdirname in ${shareddirs[@]};
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
+    for subdirname in ${shareddirs};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
     done
@@ -410,12 +410,12 @@
 @task('updatesharedpermissions_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "update shared path permissions...";
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
-    for subdirname in ${shareddirs[@]};
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
+    for subdirname in ${shareddirs};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
         chgrp -R ${service_owner} {{ $shared_dir }}/${subdirname};
@@ -425,51 +425,108 @@
 @endtask
 @task('rcp_env_to_remote',['on' => 'local'])
     echo "rcp env file to remote...";
-    server_owners=({{ implode(' ',$server_owners) }});
-    server_hosts=({{ implode(' ',$server_hosts) }});
-    server_userathosts=({{ implode(' ',$server_userathosts) }});
-    server_ports=({{ implode(' ',$server_ports) }});
-    for ((i=0;i<${#server_userathosts[@]};i++))
-    do
-        echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
-        echo "${server_owners[$i]}" > {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]};
-        scp -p${server_ports[$i]} {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]} ${server_userathosts[$i]}:{{ $tmp_dir }}/service_owner;
-        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.{{ $env }} ${server_userathosts[$i]}:{{ $app_base }}/.env.{{ $env }};
-        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp  -p${server_ports[$i]} {{ $local_dir }}/envoy.config.{{ $env }}.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    server_owners="{{ implode(' ',$server_owners) }}";
+    server_hosts="{{ implode(' ',$server_hosts) }}";
+    server_userathosts="{{ implode(' ',$server_userathosts) }}";
+    server_ports="{{ implode(' ',$server_ports) }}";
+    
+    index_count=0;
+    for item in $server_owners;do
+        eval server_owners_${index_count}=$item;
+        index_count=$((index_count+1));
     done
+    index_count=0;
+    for item in $server_hosts;do
+        eval server_hosts_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_count=0;
+    for item in $server_userathosts;do
+        eval server_userathosts_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_count=0;
+    for item in $server_ports;do
+        eval server_ports_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_length=$((index_count-1));
+    
+    for step_index in $(seq 0 $index_length)
+    do
+        eval step_owners=\$server_owners_${step_index};
+        eval step_hosts=\$server_hosts_${step_index};
+        eval step_userathosts=\$server_userathosts_${step_index};
+        eval step_ports=\$server_ports_${step_index};
+        echo "execute for server: ${step_userathosts} ${step_ports}";
+        echo "${step_owners}" > {{ $localdeploy_tmp_dir }}/servers/${step_hosts};
+        scp -p${step_ports} {{ $localdeploy_tmp_dir }}/servers/${step_hosts} ${step_userathosts}:{{ $tmp_dir }}/service_owner;
+        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${step_ports} {{ $local_dir }}/.env.{{ $env }} ${step_userathosts}:{{ $app_base }}/.env.{{ $env }};
+        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp  -p${step_ports} {{ $local_dir }}/envoy.config.{{ $env }}.php ${step_userathosts}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    done
+
     echo "rcp env file to remote Done.";
 @endtask
 
 @task('rcp_env_all_to_remote',['on' => 'local'])
     echo "rcp env all files to remote...";
-    server_owners=({{ implode(' ',$server_owners) }});
-    server_hosts=({{ implode(' ',$server_hosts) }});
-    server_userathosts=({{ implode(' ',$server_userathosts) }});
-    server_ports=({{ implode(' ',$server_ports) }});
-    for ((i=0;i<${#server_userathosts[@]};i++))
-    do
-        echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
-        echo "${server_owners[$i]}" > {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]};
-        scp -p${server_ports[$i]} {{ $localdeploy_tmp_dir }}/servers/${server_hosts[$i]} ${server_userathosts[$i]}:{{ $tmp_dir }}/service_owner;
-        [ -f {{ $local_dir }}/.env.development ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.development ${server_userathosts[$i]}:{{ $app_base }}/.env.development;
-        [ -f {{ $local_dir }}/.env.local ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.local ${server_userathosts[$i]}:{{ $app_base }}/.env.local;
-        [ -f {{ $local_dir }}/.env.production ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.production ${server_userathosts[$i]}:{{ $app_base }}/.env.production;
-        [ -f {{ $local_dir }}/.env.testing ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.testing ${server_userathosts[$i]}:{{ $app_base }}/.env.testing;
-        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${server_ports[$i]} {{ $local_dir }}/.env.{{ $env }} ${server_userathosts[$i]}:{{ $app_base }}/.env.{{ $env }};
+    server_owners="{{ implode(' ',$server_owners) }}";
+    server_hosts="{{ implode(' ',$server_hosts) }}";
+    server_userathosts="{{ implode(' ',$server_userathosts) }}";
+    server_ports="{{ implode(' ',$server_ports) }}";
 
-        [ -f {{ $local_dir }}/envoy.config.development.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.development.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.development.php;
-        [ -f {{ $local_dir }}/envoy.config.local.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.local.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.local.php;
-        [ -f {{ $local_dir }}/envoy.config.production.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.production.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.production.php;
-        [ -f {{ $local_dir }}/envoy.config.testing.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.testing.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.testing.php;
-        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp -p${server_ports[$i]} {{ $local_dir }}/envoy.config.{{ $env }}.php ${server_userathosts[$i]}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    index_count=0;
+    for item in $server_owners;do
+        eval server_owners_${index_count}=$item;
+        index_count=$((index_count+1));
     done
+    index_count=0;
+    for item in $server_hosts;do
+        eval server_hosts_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_count=0;
+    for item in $server_userathosts;do
+        eval server_userathosts_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_count=0;
+    for item in $server_ports;do
+        eval server_ports_${index_count}=$item;
+        index_count=$((index_count+1));
+    done
+    index_length=$((index_count-1));
+
+    for step_index in $(seq 0 $index_length)
+    do
+        eval step_owners=\$server_owners_${step_index};
+        eval step_hosts=\$server_hosts_${step_index};
+        eval step_userathosts=\$server_userathosts_${step_index};
+        eval step_ports=\$server_ports_${step_index};
+        echo "execute for server: ${step_userathosts} ${step_ports}";
+        echo "${step_owners}" > {{ $localdeploy_tmp_dir }}/servers/${step_hosts};
+        scp -p${step_ports} {{ $localdeploy_tmp_dir }}/servers/${step_hosts} ${step_userathosts}:{{ $tmp_dir }}/service_owner;
+
+        [ -f {{ $local_dir }}/.env.development ] && scp -p${step_ports} {{ $local_dir }}/.env.development ${step_userathosts}:{{ $app_base }}/.env.development;
+        [ -f {{ $local_dir }}/.env.local ] && scp -p${step_ports} {{ $local_dir }}/.env.local ${step_userathosts}:{{ $app_base }}/.env.local;
+        [ -f {{ $local_dir }}/.env.production ] && scp -p${step_ports} {{ $local_dir }}/.env.production ${step_userathosts}:{{ $app_base }}/.env.production;
+        [ -f {{ $local_dir }}/.env.testing ] && scp -p${step_ports} {{ $local_dir }}/.env.testing ${step_userathosts}:{{ $app_base }}/.env.testing;
+        [ -f {{ $local_dir }}/.env.{{ $env }} ] && scp -p${step_ports} {{ $local_dir }}/.env.{{ $env }} ${step_userathosts}:{{ $app_base }}/.env.{{ $env }};
+
+        [ -f {{ $local_dir }}/envoy.config.development.php ] && scp -p${step_ports} {{ $local_dir }}/envoy.config.development.php ${step_userathosts}:{{ $app_base }}/envoy.config.development.php;
+        [ -f {{ $local_dir }}/envoy.config.local.php ] && scp -p${step_ports} {{ $local_dir }}/envoy.config.local.php ${step_userathosts}:{{ $app_base }}/envoy.config.local.php;
+        [ -f {{ $local_dir }}/envoy.config.production.php ] && scp -p${step_ports} {{ $local_dir }}/envoy.config.production.php ${step_userathosts}:{{ $app_base }}/envoy.config.production.php;
+        [ -f {{ $local_dir }}/envoy.config.testing.php ] && scp -p${step_ports} {{ $local_dir }}/envoy.config.testing.php ${step_userathosts}:{{ $app_base }}/envoy.config.testing.php;
+        [ -f {{ $local_dir }}/envoy.config.{{ $env }}.php ] && scp -p${step_ports} {{ $local_dir }}/envoy.config.{{ $env }}.php ${step_userathosts}:{{ $app_base }}/envoy.config.{{ $env }}.php;
+    done
+
     echo "rcp env all files to remote Done.";
 @endtask
 
 @task('link_env_on_remote',['on' => $server_labels, 'parallel' => true])
     echo "link env on remote...";
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
@@ -610,16 +667,34 @@
 @task('rcpreleasepack_to_remote',['on' => 'local'])
     echo "rcp localpack release to remote...";
     if [ -f {{ $localdeploy_tmp_dir }}/release.tgz ]; then
-        server_userathosts=({{ implode(' ',$server_userathosts) }});
-        server_ports=({{ implode(' ',$server_ports) }});
-        for ((i=0;i<${#server_userathosts[@]};i++))
+        server_userathosts="{{ implode(' ',$server_userathosts) }}";
+        server_ports="{{ implode(' ',$server_ports) }}";
+
+        index_count=0;
+        for item in $server_userathosts;do
+            eval server_userathosts_${index_count}=$item;
+            index_count=$((index_count+1));
+        done
+        index_count=0;
+        for item in $server_ports;do
+            eval server_ports_${index_count}=$item;
+            index_count=$((index_count+1));
+        done
+        index_length=$((index_count-1));
+
+        for step_index in $(seq 0 $index_length)
         do
-            echo "execute for server: ${server_userathosts[$i]} ${server_ports[$i]}";
-            rsync -avz --progress --port ${server_ports[$i]} {{ $localdeploy_tmp_dir }}/release.tgz ${server_userathosts[$i]}:{{ $tmp_dir }}/;
+            eval step_userathosts=\$server_userathosts_${step_index};
+            eval step_ports=\$server_ports_${step_index};
+
+            echo "execute for server: ${step_userathosts} ${step_ports}";
+            rsync -avz --progress --port ${step_ports} {{ $localdeploy_tmp_dir }}/release.tgz ${step_userathosts}:{{ $tmp_dir }}/;
         done
     else
         echo "localpack release NOT EXISTS.";
-        exit;
+        echo "Pass [Ctrl-c] to quit.";
+        while true; do sleep 100;done;
+        exit 1;
     fi
     echo "rcp localpack release to remote Done.";
 @endtask
@@ -640,11 +715,15 @@
             fi
         else
             echo "extract pack release on remote ERROR.";
-            exit;
+            echo "Pass [Ctrl-c] to quit.";
+            while true; do sleep 100;done;
+            exit 1;
         fi
     else
         echo "pack release NOT EXISTS.";
-        exit;
+        echo "Pass [Ctrl-c] to quit.";
+        while true; do sleep 100;done;
+        exit 1;
     fi
     echo "extract pack release on remote Done.";
 @endtask
@@ -737,12 +816,12 @@
 @task('syncshareddata_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Sync SharedData...";
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
-    for subdirname in ${shareddirs[@]};
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
+    for subdirname in ${shareddirs};
     do
         [ -d {{ $shared_dir }}/${subdirname} ] || mkdir -p {{ $shared_dir }}/${subdirname};
         chgrp -R ${service_owner} {{ $shared_dir }}/${subdirname};
@@ -759,12 +838,12 @@
     rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $source_dir }}/ {{ $release_dir }}/{{ $release }}/;
 
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
-    for subdirname in ${shareddirs[@]};
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
+    for subdirname in ${shareddirs};
     do
         if [ -e {{ $release_dir }}/{{ $release }}/${subdirname} ]; then
             if [ ! -L {{ $release_dir }}/{{ $release }}/${subdirname} ]; then
@@ -786,7 +865,7 @@
 @task('baseenvlink_remoterelease',['on' => $server_labels, 'parallel' => true])
     echo "RemoteRelease Environment file setup...";
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
@@ -870,11 +949,11 @@
 @task('syncreleasetoapp_version',['on' => $server_labels, 'parallel' => true])
     echo "RemoteVersion Sync Release to App...";
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
         [ -L {{ $releaseprev_dir_link }} ] && unlink {{ $releaseprev_dir_link }};
@@ -882,7 +961,7 @@
             {{-- prev appdir exists --}}
             {{--create incr mode prev backup--}}
             rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
-            for subdirname in ${shareddirs[@]};
+            for subdirname in ${shareddirs};
             do
                 if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
                     if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
@@ -904,7 +983,7 @@
             fi
         fi
         rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $release_dir }}/{{ $release }}/ {{ $app_dir }}/;
-        for subdirname in ${shareddirs[@]};
+        for subdirname in ${shareddirs};
         do
             if [ -e {{ $app_dir }}/${subdirname} ]; then
                 if [ ! -L {{ $app_dir }}/${subdirname} ]; then
@@ -921,7 +1000,7 @@
             chmod -R ug+rwx {{ $app_dir }}/${subdirname};
         done
         if [ -e {{ $version_dir }}/release_name_current ]; then
-            lastreleasevalue=$(<{{ $version_dir }}/release_name_current)
+            lastreleasevalue=`cat {{ $version_dir }}/release_name_current`;
             ln -nfs {{ $release_dir }}/$lastreleasevalue {{ $releaseprev_dir_link }};
             cp -af {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
         fi
@@ -940,7 +1019,7 @@
                 {{--prev appdir is link mode--}}
                 {{--create incr mode prev backup--}}
                 rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
-                for subdirname in ${shareddirs[@]};
+                for subdirname in ${shareddirs};
                 do
                     if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
                         if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
@@ -964,7 +1043,7 @@
         fi
         ln -nfs {{ $release_dir }}/{{ $release }} {{ $app_dir }};
         if [ -e {{ $version_dir }}/release_name_current ]; then
-            lastreleasevalue=$(<{{ $version_dir }}/release_name_current)
+            lastreleasevalue=`cat {{ $version_dir }}/release_name_current`;
             ln -nfs {{ $release_dir }}/$lastreleasevalue {{ $releaseprev_dir_link }};
             cp -af {{ $version_dir }}/release_name_current {{ $version_dir }}/release_name_prev;
         fi
@@ -1016,18 +1095,18 @@
         echo "RemoteVersion Release Database Migrate Rollback Done.";
     fi
     if [ -e {{ $tmp_dir }}/service_owner ]; then
-        service_owner=$(<{{ $tmp_dir }}/service_owner);
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
     else
         service_owner="{{ $settings['service_owner_default'] }}";
     fi
-    shareddirs=({{ implode(' ',$shared_subdirs) }});
+    shareddirs="{{ implode(' ',$shared_subdirs) }}";
     if [ {{ intval($deploy_mode=='incr') }} -eq 1 ]; then
         {{-- incr mode--}}
         if [ -d {{ $releaselast_dir_incr }} ]; then
             if [ -L {{ $app_dir }} ]; then
                 {{--prev appdir is link mode--}}
                 rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
-                for subdirname in ${shareddirs[@]};
+                for subdirname in ${shareddirs};
                 do
                     if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
                         if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
@@ -1064,7 +1143,7 @@
             if [ -L {{ $app_dir }} ]; then
                 {{--prev appdir is link mode--}}
                 rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaselast_dir_incr }}/;
-                for subdirname in ${shareddirs[@]};
+                for subdirname in ${shareddirs};
                 do
                     if [ -e {{ $releaselast_dir_incr }}/${subdirname} ]; then
                         if [ ! -L {{ $releaselast_dir_incr }}/${subdirname} ]; then
@@ -1106,7 +1185,7 @@
             if [ -L {{ $app_dir }} ]; then
                 {{--prev appdir is link mode--}}
                 rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaseprev_dir_incr }}/;
-                for subdirname in ${shareddirs[@]};
+                for subdirname in ${shareddirs};
                 do
                     if [ -e {{ $releaseprev_dir_incr }}/${subdirname} ]; then
                         if [ ! -L {{ $releaseprev_dir_incr }}/${subdirname} ]; then
@@ -1144,7 +1223,7 @@
             if [ -L {{ $app_dir }} ]; then
                 {{--prev appdir is link mode--}}
                 rsync --progress -e ssh -avzh --delay-updates --exclude=".git/" {{ $excludeSharedDirPattern }} --delete --exclude=".git/"  {{ $excludeSharedDirPattern }} {{ $app_dir }}/ {{ $releaselast_dir_incr }}/;
-                for subdirname in ${shareddirs[@]};
+                for subdirname in ${shareddirs};
                 do
                     if [ -e {{ $releaselast_dir_incr }}/${subdirname} ]; then
                         if [ ! -L {{ $releaselast_dir_incr }}/${subdirname} ]; then
