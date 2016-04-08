@@ -55,12 +55,26 @@ $deploy_mode = 'link';
 $release_keep_count = 2;
 
 /**
+ * git sub-module deployed path map source-tree subdir-path -> sub-module deployed path.
+ */
+$submodule_pathmap = [
+    //'lib/mymod'=>'/var/www/mysubmodproject/current',
+];
+
+/**
  * shared sub-directories name , eg: storage
  */
 $shared_subdirs = [
     'bootstrap/cache',
     'storage',
 ];
+/**
+ * addon exclude pattens , eg: /node_modules/
+ */
+$exclude_addon_pattens = [
+    '/node_modules/',
+];
+
 /**
  * Misc. Settings
  */
