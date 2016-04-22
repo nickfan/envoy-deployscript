@@ -899,7 +899,7 @@
     echo "Workingcopy Box Build...";
     cd {{ $local_dir }};
     [ -f {{ $local_dir }}/{{ $app_name }}.phar ] && rm -rf {{ $local_dir }}/{{ $app_name }}.phar;
-    $HOME/.composer/vendor/bin/box build;
+    $HOME/.composer/vendor/bin/box build -vvv -c {{ $local_dir }}/box.json;
     echo "Workingcopy Box Build Done.";
 @endtask
 
@@ -907,15 +907,20 @@
     echo "LocalSource Box Build...";
     cd {{ $localdeploy_source_dir }};
     [ -f {{ $localdeploy_source_dir }}/{{ $app_name }}.phar ] && rm -rf {{ $localdeploy_source_dir }}/{{ $app_name }}.phar;
-    $HOME/.composer/vendor/bin/box build;
+    $HOME/.composer/vendor/bin/box build -vvv -c {{ $localdeploy_source_dir }}/box.json;
     echo "LocalSource Box Build Done.";
 @endtask
 
 @task('boxbuild_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Box Build...";
+    if [ -e {{ $tmp_dir }}/service_owner ]; then
+        service_owner=`cat {{ $tmp_dir }}/service_owner`;
+    else
+        service_owner="{{ $settings['service_owner_default'] }}";
+    fi
     cd {{ $source_dir }};
     [ -f {{ $source_dir }}/{{ $app_name }}.phar ] && rm -rf {{ $source_dir }}/{{ $app_name }}.phar;
-    $HOME/.composer/vendor/bin/box build;
+    $HOME/.composer/vendor/bin/box build -vvv -c {{ $source_dir }}/box.json;
     echo "RemoteSource Box Build Done.";
 @endtask
 
