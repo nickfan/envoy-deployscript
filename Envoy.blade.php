@@ -217,7 +217,6 @@
             'envsetup_remotesrc',
             'depsinstall_remotesrc',
             'extracustomoverwrite_remotesrc',
-            'runtimeoptimize_remotesrc',
         ),
         'pack_remotebuildpack'=>array(
             //'show_env_remote',
@@ -234,6 +233,7 @@
             'prepare_remoterelease',
             'baseenvlink_remoterelease',
             'depsreinstall_remoterelease',
+            'runtimeoptimize_remotesrc',
         ),
         'subproc_versionsetup'=>array(
             'syncreleasetoapp_version',
@@ -985,7 +985,7 @@
 
 @task('runtimeoptimize_remotesrc',['on' => $server_labels, 'parallel' => true])
     echo "RemoteSource Runtime optimize...";
-    cd {{ $source_dir }};
+    cd {{ $release_dir }}/{{ $release }};
     if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
         echo "Composer optimize...";
         {{ $settings['runtime_optimize_command']['composer'] }};
