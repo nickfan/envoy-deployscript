@@ -185,7 +185,7 @@
             'envsetup_localsrc',
             'depsinstall_localsrc',
             'extracustomoverwrite_localsrc',
-            'runtimeoptimize_localsrc',
+            //'runtimeoptimize_localsrc',
             'packrelease_localsrc',
         ),
         'rcp_localpack'=>array(
@@ -217,7 +217,7 @@
             'envsetup_remotesrc',
             'depsinstall_remotesrc',
             'extracustomoverwrite_remotesrc',
-            'runtimeoptimize_remotesrc',
+            //'runtimeoptimize_remotesrc',
         ),
         'pack_remotebuildpack'=>array(
             //'show_env_remote',
@@ -237,6 +237,7 @@
         ),
         'subproc_versionsetup'=>array(
             'syncreleasetoapp_version',
+            'runtimeoptimize_version',
             'databasemigrate_version',
             'customtask_on_deploy',
             'cleanupoldreleases_on_remote',
@@ -548,7 +549,7 @@
     server_hosts="{{ implode(' ',$server_hosts) }}";
     server_userathosts="{{ implode(' ',$server_userathosts) }}";
     server_ports="{{ implode(' ',$server_ports) }}";
-    
+
     index_count=0;
     for item in $server_owners;do
         eval server_owners_${index_count}=$item;
@@ -570,7 +571,7 @@
         index_count=$((index_count+1));
     done
     index_length=$((index_count-1));
-    
+
     for step_index in $(seq 0 $index_length)
     do
         eval step_owners=\$server_owners_${step_index};
@@ -1125,7 +1126,7 @@
     fi
     [ -f {{ $app_base }}/.env ] && ln -nfs {{ $app_base }}/.env {{ $app_dir }}/.env;
     [ -f {{ $app_base }}/.env.{{ $env }} ] && ln -nfs {{ $app_base }}/.env.{{ $env }} {{ $app_dir }}/.env;
-    
+
     [ -f {{ $app_base }}/envoy.config.php ] && ln -nfs {{ $app_base }}/envoy.config.php {{ $app_dir }}/envoy.config.php;
     [ -f {{ $app_base }}/envoy.config.{{ $env }}.php ] && ln -nfs {{ $app_base }}/envoy.config.{{ $env }}.php {{ $app_dir }}/envoy.config.php;
     chgrp -h ${service_owner} {{ $app_dir }}/.env;
@@ -1418,6 +1419,32 @@
     chgrp -h ${service_owner} {{ $app_dir }}/{{ $version_name }}.phar;
     chmod -Rf ug+rwx {{ $app_dir }}/{{ $version_name }}.phar;
     echo "RemoteVersion Sync Build Release to App Done.";
+@endtask
+
+@task('runtimeoptimize_version',['on' => $server_labels, 'parallel' => true])
+    echo "RemoteVersion Runtime optimize...";
+    cd {{ $app_dir }};
+    if [ {{ intval($settings['runtime_optimize_component']['composer']) }} -eq 1 ]; then
+        echo "Composer optimize...";
+        {{ $settings['runtime_optimize_command']['composer'] }};
+        echo "Composer optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['optimize']) }} -eq 1 ]; then
+        echo "artisan optimize...";
+        {{ $settings['runtime_optimize_command']['artisan']['optimize'] }};
+        echo "artisan optimized.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['config_cache']) }} -eq 1 ]; then
+        echo "artisan config:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['config_cache'] }};
+        echo "artisan config:cache done.";
+    fi
+    if [ {{ intval($settings['runtime_optimize_component']['artisan']['route_cache']) }} -eq 1 ]; then
+        echo "artisan route:cache...";
+        {{ $settings['runtime_optimize_command']['artisan']['route_cache'] }};
+        echo "artisan route:cache done.";
+    fi
+    echo "RemoteVersion Runtime optimized.";
 @endtask
 
 @task('databasemigrate_version',['on' => $server_labels, 'parallel' => true])
@@ -1719,7 +1746,7 @@
             if [ -L {{ $app_dir }}/{{ $version_name }}.phar ]; then
                 {{--prev appdir is link mode--}}
                 cp -RLpf {{ $app_dir }}/{{ $version_name }}.phar {{ $buildreleaselast_incr }}.phar;
-                
+
                 [ -e {{ $app_dir }}/{{ $version_name }}.phar ] && mv {{ $app_dir }}/{{ $version_name }}.phar {{ $buildreleaselast_link }}.phar;
             else
                 {{--prev appdir is incr mode--}}

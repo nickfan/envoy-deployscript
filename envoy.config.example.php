@@ -120,8 +120,8 @@ $settings = [
         'composer'=>'composer dump-autoload --optimize',
         'artisan'=> [
             'optimize'=>'php artisan clear-compiled && php artisan optimize',
-            'config_cache'=>'php artisan config:cache',
-            'route_cache'=>'php artisan route:cache',
+            'config_cache'=>'php artisan config:clear && php artisan config:cache',
+            'route_cache'=>'php artisan route:clear && php artisan route:cache',
         ],
     ],
     // do database migrate on deploy
