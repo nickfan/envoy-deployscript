@@ -291,7 +291,7 @@
         echo 'Calling Custom Task On Deploy...';
         cd {{ $app_dir }};
         {{-- Call your custom task on deploy eg: --}}
-        {{-- php artisan --}}
+        {{ customtask_on_deploy() }}
         echo "Custom Task done.";
     fi
 @endtask
