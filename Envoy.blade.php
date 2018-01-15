@@ -291,7 +291,9 @@
         echo 'Calling Custom Task On Deploy...';
         cd {{ $app_dir }};
         {{-- Call your custom task on deploy eg: --}}
-        {{ customtask_on_deploy() }}
+        @if ( function_exists('customtask_on_deploy') )
+            {{ customtask_on_deploy() }}
+        @endif
         echo "Custom Task done.";
     fi
 @endtask
