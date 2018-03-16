@@ -191,3 +191,8 @@ Please submit improvements and fixes :)
 
 [Nick Fan](http://axiong.me)
 
+
+## Support on Beerpay
+Hey dude! Help me out for a couple of :beers:!
+
+[![Beerpay](https://beerpay.io/nickfan/envoy-deployscript/badge.svg?style=beer-square)](https://beerpay.io/nickfan/envoy-deployscript)  [![Beerpay](https://beerpay.io/nickfan/envoy-deployscript/make-wish.svg?style=flat-square)](https://beerpay.io/nickfan/envoy-deployscript?focus=wish)
