@@ -79,7 +79,7 @@ $exclude_addon_pattens = [
  * post deployment command, should return a shell command to run
  */
 function customtask_on_deploy() {
-    $variable = 'every server'
+    $variable = 'every server';
     return "echo 'Custom task run on $variable post deploy.'";
 }
 
